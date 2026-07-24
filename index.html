@@ -1,0 +1,1721 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Norāi Café Club</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Work+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root{
+    --page: #3E4234;
+    --paper: #FBF9F4;
+    --cream: #F2EEE3;
+    --ink: #211F1A;
+    --olive: #565C46;
+    --olive-deep: #333727;
+    --mustard: #E7B94E;
+    --mustard-deep: #C79A32;
+    --muted: #8C8676;
+    --muted-on-dark: rgba(242,238,227,0.62);
+    --line: #DAD3C2;
+    --line-on-dark: rgba(242,238,227,0.16);
+    --danger: #A6432B;
+    --radius: 20px;
+  }
+  *{ box-sizing: border-box; }
+  html,body{ margin:0; padding:0; }
+  body{
+    background:
+      repeating-linear-gradient(0deg, transparent, transparent 39px, rgba(242,238,227,0.045) 39px, rgba(242,238,227,0.045) 40px),
+      repeating-linear-gradient(90deg, transparent, transparent 39px, rgba(242,238,227,0.045) 39px, rgba(242,238,227,0.045) 40px),
+      var(--page);
+    color: var(--cream);
+    font-family: 'Work Sans', sans-serif;
+    min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app{ max-width: 480px; margin: 0 auto; min-height: 100vh; display:flex; flex-direction:column; }
+
+  /* Top nav */
+  .topnav{
+    display:flex; justify-content:space-between; align-items:center;
+    padding: 20px 20px 14px; border-bottom: 1px solid var(--line-on-dark);
+  }
+  .brand{ display:flex; align-items:center; gap:10px; }
+  .brand .mark{ width:26px; height:26px; flex-shrink:0; }
+  .brand .word{ font-family:'Space Grotesk', sans-serif; font-weight:700; font-size: 1.15rem; letter-spacing: 0.01em; line-height:1; color:var(--cream); }
+  .brand .tag{ font-size:0.55rem; color:var(--muted-on-dark); letter-spacing:0.14em; text-transform:uppercase; margin-top:2px; }
+
+  .mode-toggle{
+    display:flex; background: var(--paper); border-radius: 999px; padding:3px;
+    border: 1px solid var(--line);
+  }
+  .mode-toggle button{
+    border:none; background:transparent; color:var(--muted); font-family:'Work Sans';
+    font-size:0.62rem; font-weight:600; padding:7px 9px; border-radius:999px; cursor:pointer;
+    letter-spacing:0.02em; text-transform:uppercase; white-space:nowrap;
+  }
+  .mode-toggle button.active{ background: var(--olive); color:var(--paper); }
+
+  main{ flex:1; padding: 20px 20px 44px; }
+
+  h1.hero{
+    font-family:'Space Grotesk', sans-serif; font-weight:700; font-size: 1.5rem; line-height:1.2;
+    margin: 4px 0 6px; letter-spacing:-0.01em; color:var(--cream);
+  }
+  p.sub{ color: var(--muted-on-dark); font-size:0.92rem; margin: 0 0 22px; line-height:1.5; }
+
+  /* Form */
+  .field{ margin-bottom: 14px; }
+  .field label{ display:block; font-size:0.72rem; color:var(--muted-on-dark); margin-bottom:6px; text-transform:uppercase; letter-spacing:0.06em; }
+  .receipt-box .field label, .customer-expand .field label{ color: var(--muted); }
+  .field input, .field select{
+    width:100%; background: var(--paper); border:1px solid var(--line); color:var(--ink);
+    padding: 13px 14px; border-radius: 12px; font-size:0.95rem; font-family:'Work Sans';
+  }
+  .field input:focus, .field select:focus{ outline:none; border-color: var(--olive); }
+  .bday-row{ display:flex; gap:8px; }
+  .bday-row select{ flex:1; min-width:0; }
+  .consent{ display:flex; gap:10px; align-items:flex-start; margin: 18px 0; font-size:0.78rem; color:var(--muted-on-dark); line-height:1.5; }
+  .consent input{ margin-top:3px; accent-color: var(--olive); }
+
+  .btn{
+    width:100%; background: var(--mustard); color:var(--ink); border:none; padding:15px;
+    border-radius: 14px; font-weight:700; font-size:0.95rem; cursor:pointer; font-family:'Work Sans';
+    transition: transform .15s ease, background .15s ease;
+  }
+  .btn:active{ transform: scale(0.98); }
+  .btn.secondary{ background: var(--paper); color: var(--ink); border:1px solid var(--line); }
+  .btn.danger{ background: var(--danger); color:var(--paper); }
+
+  /* Card view - light card sits on the dark olive page for strong contrast */
+  .card{
+    background: linear-gradient(160deg, #4A5039 0%, var(--olive-deep) 55%, #262A1E 100%);
+    border: 1.5px solid rgba(231,185,78,0.4);
+    border-radius: var(--radius); padding: 26px 22px 22px; position:relative; overflow:hidden;
+    color: var(--paper); box-shadow: 0 20px 46px -18px rgba(0,0,0,0.6);
+  }
+  .card::before{
+    content:''; position:absolute; top:-72px; left:-72px; width:200px; height:200px;
+    border-radius:50%; border: 26px solid rgba(231,185,78,0.05);
+  }
+  .card-seal-hero{ display:flex; justify-content:center; margin-bottom:16px; position:relative; z-index:1; }
+  .card-wordmark{ display:flex; flex-direction:column; align-items:flex-start; margin-bottom:18px; position:relative; z-index:1; }
+  .card-wordmark-row{ display:flex; align-items:center; gap:9px; }
+  .card-wordmark-word{ font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:1.5rem; letter-spacing:0.02em; color:var(--mustard); line-height:1; }
+  .card-wordmark-sub{ font-size:0.62rem; letter-spacing:0.4em; text-transform:uppercase; color:rgba(251,249,244,0.65); margin-top:6px; margin-left:3px; }
+  .card-top{ display:flex; justify-content:space-between; align-items:flex-start; margin-bottom: 4px; position:relative; z-index:1;}
+  .card-top .name{ font-family:'Space Grotesk', sans-serif; font-size:1.3rem; font-weight:700; color:var(--paper); }
+  .card-top .tier{ font-size:0.62rem; color:var(--mustard); text-transform:uppercase; letter-spacing:0.1em; text-align:right; }
+  .card-top .tier b{ display:block; font-family:'Space Grotesk'; font-size:0.9rem; color:var(--paper); font-weight:600; }
+
+  .ring-wrap{ display:flex; justify-content:center; margin: 20px 0 6px; position:relative; z-index:1; }
+  .ring-svg{ width: 250px; height:250px; }
+  .ring-center{
+    position:absolute; top:50%; left:50%; transform: translate(-50%,-50%);
+    text-align:center;
+  }
+  .ring-center .count{ font-family:'JetBrains Mono'; font-weight:600; font-size:2rem; color:var(--paper); }
+  .ring-center .of{ font-family:'JetBrains Mono'; font-size:0.8rem; color:rgba(251,249,244,0.55); }
+  .ring-center .caption{ font-size:0.62rem; color:var(--mustard); text-transform:uppercase; letter-spacing:0.1em; margin-top:5px; }
+  .ring-center .mark-mini{ width:20px; height:20px; margin: 0 auto 4px; opacity:0.9; }
+
+  .stamp-dot{
+    position:absolute; width:32px; height:32px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    transform-origin: center;
+  }
+  .stamp-dot .empty{ width:100%; height:100%; border-radius:50%; border:1.5px dashed rgba(251,249,244,0.3); }
+  .stamp-dot .filled{
+    width:100%; height:100%; border-radius:50%;
+    background: var(--mustard);
+    box-shadow: 0 0 0 3px rgba(231,185,78,0.3);
+    display:flex; align-items:center; justify-content:center;
+    animation: stampIn .4s ease;
+  }
+  .stamp-dot .filled svg{ width:15px; height:15px; }
+  @keyframes stampIn{ from{ transform: scale(0.3); opacity:0;} to{ transform: scale(1); opacity:1;} }
+
+  .free-banner{
+    text-align:center; background: rgba(251,249,244,0.1); border:1px solid rgba(251,249,244,0.28);
+    color: var(--paper); font-size:0.83rem; padding:10px; border-radius:12px; margin: 14px 0 4px;
+    font-weight:600; position:relative; z-index:1;
+  }
+
+  .qr-box{ display:flex; justify-content:center; margin: 18px 0 6px; position:relative; z-index:1; }
+  .qr-frame{ background:#FFFFFF; padding:12px; border-radius:14px; }
+  .id-line{ text-align:center; font-family:'JetBrains Mono'; font-size:0.68rem; color:rgba(251,249,244,0.5); letter-spacing:0.05em; margin-top:8px; position:relative; z-index:1; }
+
+  .card-address{
+    text-align:center; font-size:0.62rem; color:rgba(251,249,244,0.55); letter-spacing:0.08em;
+    text-transform:uppercase; margin-top:16px; padding-top:12px; border-top:1px dashed rgba(251,249,244,0.2);
+    position:relative; z-index:1;
+  }
+
+  .review-btn{
+    display:flex; align-items:center; justify-content:center; gap:5px; flex-wrap:nowrap;
+    background: rgba(231,185,78,0.14); border:1.5px solid var(--mustard);
+    border-radius:12px; padding:9px 12px; margin-top:12px; text-decoration:none;
+    position:relative; z-index:1;
+  }
+  .review-btn-text{ display:flex; align-items:center; gap:4px; font-family:'Work Sans'; font-weight:600; font-size:0.76rem; color:var(--paper); white-space:nowrap; }
+  .google-wordmark-inline{ font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:0.82rem; }
+  .review-stars{ display:flex; gap:1px; flex-shrink:0; }
+  .review-stars svg{ width:10px; height:10px; fill:#F4B400; }
+
+  .section-label{
+    font-size:0.68rem; text-transform:uppercase; letter-spacing:0.1em; color:var(--muted-on-dark);
+    margin: 26px 0 10px; display:flex; align-items:center; gap:8px;
+  }
+  .section-label::after{ content:''; flex:1; height:1px; background:var(--line-on-dark); }
+  .receipt-box .section-label{ color:var(--muted); }
+  .receipt-box .section-label::after{ background:var(--line); }
+
+  .staff-list{ display:flex; flex-direction:column; gap:8px; }
+  .customer-block{ }
+  .cust-row{
+    background: var(--paper); border:1px solid var(--line); border-radius:14px; padding:12px 16px;
+    display:flex; justify-content:space-between; align-items:center; cursor:pointer; gap:10px;
+  }
+  .cust-row.selected{ border-color: var(--olive); background: #EFEADB; border-radius:14px 14px 0 0; }
+  .cust-row .cname{ font-weight:600; font-size:0.9rem; color:var(--ink); }
+  .cust-row .cid{ font-family:'JetBrains Mono'; font-size:0.66rem; color:var(--muted); margin-left:6px; }
+  .cust-row .cmeta{ font-size:0.7rem; color:var(--muted); margin-top:2px; }
+  .cust-row .cstamps{ font-family:'JetBrains Mono'; font-size:0.95rem; color:var(--olive); font-weight:600; flex-shrink:0; }
+  .mini-actions{ display:flex; gap:6px; flex-shrink:0; }
+  .mini-btn{
+    border:1px solid var(--line); background:var(--cream); color:var(--ink); font-size:0.62rem; font-weight:600;
+    padding:5px 8px; border-radius:8px; cursor:pointer; text-transform:uppercase; letter-spacing:0.02em; white-space:nowrap;
+  }
+  .mini-btn.danger{ border-color: rgba(166,67,43,0.4); color: var(--danger); }
+  .customer-expand{
+    background: var(--paper); border:1px solid var(--olive); border-top:none; border-radius:0 0 14px 14px;
+    padding: 14px 16px 16px;
+  }
+  .empty-state{ text-align:center; color:var(--muted-on-dark); font-size:0.85rem; padding: 30px 10px; }
+
+  .action-row{ display:flex; gap:10px; margin-top:16px; }
+  .action-row .btn{ flex:1; }
+
+  .checkbox-row{ display:flex; align-items:center; gap:10px; color:var(--cream); }
+  .checkbox-row input{ accent-color: var(--mustard); width:18px; height:18px; }
+  .receipt-box .checkbox-row, .customer-expand .checkbox-row{ color: var(--ink); }
+
+  textarea{
+    width:100%; background: var(--paper); border:1px solid var(--line); color:var(--ink);
+    padding: 13px 14px; border-radius: 12px; font-size:0.9rem; font-family:'Work Sans'; resize:vertical; min-height:80px;
+  }
+  textarea:focus{ outline:none; border-color:var(--olive); }
+
+  .toast{
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+    background: var(--ink); color:var(--paper); padding:12px 20px; border-radius:12px;
+    font-weight:600; font-size:0.85rem; box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+    animation: toastIn .3s ease, toastOut .3s ease 2.2s forwards;
+  }
+  @keyframes toastIn{ from{ opacity:0; transform:translate(-50%, 10px);} to{ opacity:1; transform:translate(-50%,0);} }
+  @keyframes toastOut{ to{ opacity:0; } }
+
+  .receipt-box{
+    background: var(--paper); border:1px solid var(--line); border-radius:14px; padding:14px 16px;
+    margin-top:12px;
+  }
+  .receipt-box .who{ font-size:0.8rem; color:var(--muted); margin-bottom:10px; }
+  .receipt-box .who b{ color:var(--ink); }
+  .history-list{ margin-top:12px; }
+  .history-item{
+    display:flex; justify-content:space-between; font-size:0.78rem; color:var(--muted);
+    padding: 7px 0; border-bottom:1px dashed var(--line);
+  }
+  .history-item b{ color: var(--ink); font-family:'JetBrains Mono'; font-weight:600; }
+  .history-empty{ font-size:0.78rem; color:var(--muted); padding:6px 0; }
+  .warn-text{ color:var(--danger); font-size:0.75rem; margin-top:6px; }
+  .note{ font-size:0.72rem; color:var(--muted-on-dark); line-height:1.55; margin-top:18px; }
+  .receipt-box .note, .customer-expand .note, .report-panel .note{ color: var(--muted); }
+  .link-btn{ background:none; border:none; color:var(--mustard); font-size:0.82rem; text-decoration:underline; cursor:pointer; padding:0; margin-top:16px; }
+
+  .footer-addr{ text-align:center; font-size:0.65rem; color:var(--muted-on-dark); letter-spacing:0.06em; margin-top:28px; text-transform:uppercase; }
+
+  .card-brand{ display:flex; align-items:center; gap:8px; margin-bottom:16px; }
+  .card-brand .word{ font-family:'Space Grotesk', sans-serif; font-weight:700; font-size:0.85rem; letter-spacing:0.01em; color:var(--ink); }
+  .card-brand .tag{ font-size:0.62rem; color:var(--muted); font-weight:500; margin-left:4px; }
+
+  .phone-mock{ border:1px solid var(--line-on-dark); border-radius:26px; overflow:hidden; margin-top:14px; box-shadow:0 20px 44px -22px rgba(0,0,0,0.55); }
+  .phone-mock-header{ background:var(--page); padding:16px 18px 12px; display:flex; align-items:center; gap:10px; border-bottom:1px solid var(--line-on-dark); }
+  .phone-mock-body{ background:var(--page); padding:16px 18px 28px; }
+
+  .report-backdrop{
+    position:fixed; inset:0; background:rgba(20,18,13,0.6); z-index:50;
+    display:flex; align-items:flex-end; justify-content:center;
+  }
+  .report-panel{
+    background: var(--paper); width:100%; max-width:480px; border-radius: 22px 22px 0 0;
+    padding: 22px 20px 30px; max-height:88vh; overflow-y:auto;
+    box-shadow: 0 -20px 50px rgba(0,0,0,0.4);
+  }
+  .report-header{ display:flex; justify-content:space-between; align-items:center; margin-bottom:18px; }
+  .report-header h2{ font-family:'Space Grotesk', sans-serif; font-size:1.15rem; font-weight:700; color:var(--ink); margin:0; }
+  .report-close{ border:none; background:var(--cream); color:var(--ink); width:30px; height:30px; border-radius:50%; font-size:0.9rem; cursor:pointer; }
+</style>
+</head>
+<body>
+<div class="app" id="app"></div>
+
+<!-- Reusable SVG defs: the Λ mark, redrawn from the café's own logo -->
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <g id="mark-shape">
+      <path d="M12 4 L20 21 M12 4 L4 21" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" fill="none"/>
+    </g>
+  </defs>
+</svg>
+
+<script>
+/* ============================================================
+   CONFIGURACIÓN DE FIREBASE
+   Reemplazá estos valores por los de tu proyecto real:
+   Firebase console → Configuración del proyecto → Tus apps → SDK config
+   ============================================================ */
+const firebaseConfig = {
+  apiKey: "AIzaSyCJ5HkexrCutXzhr9CgHHb6t3nEE2BTiZM",
+  authDomain: "tarjeta-fidelizacion-norai.firebaseapp.com",
+  databaseURL: "https://tarjeta-fidelizacion-norai-default-rtdb.firebaseio.com",
+  projectId: "tarjeta-fidelizacion-norai",
+  storageBucket: "tarjeta-fidelizacion-norai.firebasestorage.app",
+  messagingSenderId: "905930912651",
+  appId: "1:905930912651:web:48a50e762f50280fd9f58e"
+};
+
+/* Reglas de Firestore para pruebas (Firebase console → Firestore → Reglas):
+   rules_version = '2';
+   service cloud.firestore {
+     match /databases/{database}/documents {
+       match /customers/{customerId} {
+         allow read, write: if true; // ⚠️ Abierto solo para probar. No usar así en producción.
+       }
+     }
+   }
+*/
+
+let db, fsDoc, fsGetDoc, fsSetDoc, fsGetDocs, fsCollection, fsQuery, fsWhere;
+let auth, authSignInEmail, authSignInGoogle, authSignOut, GoogleProvider;
+
+async function initFirebase(){
+  if(!firebaseConfig.apiKey || firebaseConfig.apiKey.startsWith('TU_')){
+    state.configError = 'Falta completar firebaseConfig con los datos reales de tu proyecto Firebase (arriba en el código).';
+    render();
+    return false;
+  }
+  try{
+    const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js");
+    const fs = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js");
+    const authMod = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
+    const app = initializeApp(firebaseConfig);
+    db = fs.getFirestore(app);
+    fsDoc = fs.doc; fsGetDoc = fs.getDoc; fsSetDoc = fs.setDoc;
+    fsGetDocs = fs.getDocs; fsCollection = fs.collection;
+    fsQuery = fs.query; fsWhere = fs.where;
+
+    auth = authMod.getAuth(app);
+    authSignInEmail = authMod.signInWithEmailAndPassword;
+    authSignInGoogle = authMod.signInWithPopup;
+    authSignOut = authMod.signOut;
+    GoogleProvider = authMod.GoogleAuthProvider;
+
+    authMod.onAuthStateChanged(auth, async (user)=>{
+      if(user && ADMIN_EMAILS.map(e=>e.toLowerCase()).includes((user.email||'').toLowerCase())){
+        state.isAdmin = true;
+        state.adminEmail = user.email;
+      } else if(user){
+        // Se autenticó con Firebase pero no está en la lista de administradores permitidos
+        state.isAdmin = false;
+        state.adminEmail = null;
+        showToast('Esta cuenta no tiene permisos de administrador');
+        await authSignOut(auth);
+        return;
+      } else {
+        state.isAdmin = false;
+        state.adminEmail = null;
+      }
+      render();
+    });
+
+    return true;
+  }catch(e){
+    console.error(e);
+    state.configError = 'No se pudo conectar a Firebase. Revisá el firebaseConfig y que Firestore/Authentication estén habilitados en tu proyecto.';
+    render();
+    return false;
+  }
+}
+</script>
+<script>
+
+let state = {
+  mode: 'customer', // 'customer' | 'staff'
+  screen: 'loading', // loading | register | card
+  me: null, // {id, name, phone, email, stamps, redeemed}
+  allCustomers: [],
+  selectedCustomerId: null,
+  toast: null,
+  promoSelected: new Set(),
+  promoText: '',
+  receiptValue: '',
+  receiptWarning: '',
+  receiptCompanyDiscount: false,
+  amountValue: '',
+  showReportModal: false,
+  reportFilterMode: 'month',
+  reportMonth: String(new Date().getMonth()+1),
+  reportYear: String(new Date().getFullYear()),
+  reportDaysBack: '30',
+  productsValue: '',
+  tasteFilter: '',
+  configError: null,
+  previewCustomerId: null,
+  isAdmin: false,
+  adminEmail: null,
+  adminEmailInput: '',
+  adminPasswordInput: '',
+  adminEditingId: null,
+  adminEditPhone: '',
+  adminEditEmail: '',
+  adminEditBirthDay: '',
+  adminEditBirthMonth: '',
+  adminEditBirthYear: '',
+  adminEditNote: '',
+  staffSearch: '',
+  previewSearch: '',
+  allCompanies: [],
+  newCompanyName: '',
+  newCompanyCode: '',
+  newCompanyDiscount: '',
+  companyCodeInput: '',
+  companyRutInput: '',
+  showCompanyForm: false,
+  expandedCompanyId: null,
+  addCompanyClientSearch: '',
+  editingCompanyId: null,
+  editCompanyName: '',
+  editCompanyDiscount: '',
+  expandedCompanyClientId: null,
+  editClientRut: '',
+};
+
+// PIN de administrador para esta demo. En producción esto debe validarse
+// contra un usuario real (Firebase Auth), nunca quedar escrito en el código del cliente.
+// Emails autorizados a operar como administrador (edítalo con los correos reales del equipo).
+// La autenticación la valida Firebase (con contraseña o Google), pero esta lista decide
+// quién, una vez identificado, tiene permisos de administrador dentro de la app.
+const ADMIN_EMAILS = ['sebastian.macias@gmail.com'];
+
+// Link directo a la pantalla de reseña de Google para Norāi Café Club
+const GOOGLE_REVIEW_URL = 'https://search.google.com/local/writereview?placeid=ChIJX39JIgDPYpYR_qWwKUVa_mM';
+
+// Cantidad de sellos necesarios para el café gratis.
+// Bajado a 5 temporalmente para pruebas — volver a 10 (o lo que definan) cuando esté decidido.
+const STAMPS_GOAL = 5;
+
+function uid(prefix){ return prefix + '-' + Math.random().toString(36).slice(2,9); }
+
+async function generateFriendlyId(){
+  for(let i=0; i<25; i++){
+    const candidate = String(Math.floor(100000 + Math.random()*900000)); // 6 dígitos, fácil de teclear
+    try{
+      const snap = await fsGetDoc(fsDoc(db, 'customers', candidate));
+      if(!snap.exists()) return candidate;
+    }catch(e){ /* si falla la verificación, seguimos probando otro */ }
+  }
+  return uid('nrc'); // resguardo por si no se consiguió un número libre
+}
+
+function markSVG(size, color){
+  return '<svg viewBox="0 0 24 24" width="'+size+'" height="'+size+'" style="color:'+color+'"><use href="#mark-shape"/></svg>';
+}
+
+// Circular seal recreated from the café's real badge: "COFFEE & BAKERY · NORAI CAFE CLUB · EST. 2022"
+function sealSVG(size, fill, textColor){
+  const id = 'sealpath-' + Math.random().toString(36).slice(2,7);
+  return '<svg viewBox="0 0 120 120" width="'+size+'" height="'+size+'">'
+    + '<circle cx="60" cy="60" r="58" fill="'+fill+'"/>'
+    + '<path id="'+id+'" d="M 60,12 A 48,48 0 1 1 59.9,12" fill="none"/>'
+    + '<text font-family="Space Grotesk, sans-serif" font-size="7.2" font-weight="600" letter-spacing="1.5" fill="'+textColor+'">'
+    + '<textPath href="#'+id+'" startOffset="2">COFFEE &amp; BAKERY · NOR\u0100I CAFE CLUB · EST. 2022 · </textPath>'
+    + '</text>'
+    + '<g transform="translate(46,42) scale(1.15)"><path d="M12 4 L20 21 M12 4 L4 21" stroke="'+textColor+'" stroke-width="2.4" stroke-linecap="round" fill="none"/></g>'
+    + '</svg>';
+}
+
+async function loadMe(){
+  try{
+    const myId = localStorage.getItem('norai-my-id');
+    if(myId){
+      const snap = await fsGetDoc(fsDoc(db, 'customers', myId));
+      if(snap.exists()){
+        state.me = { id: myId, ...snap.data() };
+        if(state.me.companyStatus === 'approved' && state.me.companyCode){
+          try{
+            const coSnap = await fsGetDoc(fsDoc(db, 'companies', state.me.companyCode));
+            state.me.company = coSnap.exists() ? { id: coSnap.id, ...coSnap.data() } : null;
+          }catch(e){ state.me.company = null; }
+        }
+        state.screen = 'card';
+        render();
+        return;
+      }
+    }
+  }catch(e){ console.error(e); }
+  state.screen = 'register';
+  render();
+}
+
+async function loadAllCustomers(){
+  try{
+    const snap = await fsGetDocs(fsCollection(db, 'customers'));
+    state.allCustomers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  }catch(e){
+    console.error(e);
+    state.allCustomers = [];
+  }
+}
+
+async function saveCustomer(cust){
+  const { id, ...data } = cust;
+  await fsSetDoc(fsDoc(db, 'customers', id), data);
+}
+
+async function loadCompanies(){
+  try{
+    const snap = await fsGetDocs(fsCollection(db, 'companies'));
+    state.allCompanies = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  }catch(e){
+    console.error(e);
+    state.allCompanies = [];
+  }
+}
+
+async function saveCompany(company){
+  const { id, ...data } = company;
+  await fsSetDoc(fsDoc(db, 'companies', id), data);
+}
+
+function showToast(msg){
+  state.toast = msg;
+  render();
+  setTimeout(()=>{ state.toast = null; }, 2500);
+}
+
+async function registerCustomer(name, phone, email, birthday){
+  const id = await generateFriendlyId();
+  const cust = { id, name, phone, email, birthday: birthday || '', stamps:0, redeemed:0, createdAt: Date.now(), history:[], tasteProfile:{} };
+  await saveCustomer(cust);
+  localStorage.setItem('norai-my-id', id);
+  state.me = cust;
+  state.screen = 'card';
+  render();
+}
+
+async function addStamp(customerId){
+  const receipt = (state.receiptValue||'').trim();
+  if(!receipt){
+    state.receiptWarning = 'Ingresá el N° de boleta para poder sumar el sello.';
+    render();
+    return;
+  }
+
+  const snap = await fsGetDoc(fsDoc(db, 'customers', customerId));
+  if(!snap.exists()) return;
+  let cust = { id: customerId, ...snap.data() };
+
+  if(cust.disabled){
+    state.receiptWarning = 'Este cliente está deshabilitado. Un administrador tiene que habilitarlo antes de poder sumarle sellos.';
+    render();
+    return;
+  }
+
+  cust.history = cust.history || [];
+  cust.tasteProfile = cust.tasteProfile || {};
+
+  if(cust.stamps >= STAMPS_GOAL){
+    state.receiptWarning = 'Este cliente ya completó sus '+STAMPS_GOAL+' sellos. Canjeá el café gratis antes de seguir sumando.';
+    render();
+    return;
+  }
+
+  const already = cust.history.some(h => h.receipt.toLowerCase() === receipt.toLowerCase());
+  if(already){
+    state.receiptWarning = 'Esa boleta (N° ' + receipt + ') ya fue usada para sumar un sello de ' + cust.name + '. Revisá antes de continuar.';
+    render();
+    return;
+  }
+
+  const products = (state.productsValue||'').split(',').map(p=>p.trim()).filter(Boolean);
+  const custCo = state.allCompanies.find(x => x.id === cust.companyCode);
+  const activeCompanyBenefit = cust.companyStatus === 'approved' && !!custCo && custCo.active !== false && cust.companyEnabled !== false;
+  const hasCompanyDiscount = activeCompanyBenefit ? true : !!state.receiptCompanyDiscount;
+  const amount = state.amountValue !== '' && state.amountValue != null ? Number(state.amountValue) : null;
+
+  let companyName = '', companyDiscountLabel = '';
+  if(hasCompanyDiscount && cust.companyStatus === 'approved' && cust.companyCode){
+    const co = state.allCompanies.find(x => x.id === cust.companyCode);
+    if(co){ companyName = co.name; companyDiscountLabel = co.discount; }
+  }
+
+  let justCompleted = false;
+  if(hasCompanyDiscount){
+    cust.history.unshift({ receipt, ts: Date.now(), products, amount, companyDiscount: true, companyName, companyDiscountLabel });
+  } else {
+    cust.stamps += 1;
+    justCompleted = cust.stamps >= STAMPS_GOAL;
+    cust.history.unshift({ receipt, ts: Date.now(), products, amount });
+  }
+  cust.history = cust.history.slice(0, 500);
+  products.forEach(p=>{ cust.tasteProfile[p] = (cust.tasteProfile[p]||0) + 1; });
+
+  await saveCustomer(cust);
+  await loadAllCustomers();
+  state.receiptValue = '';
+  state.productsValue = '';
+  state.receiptWarning = '';
+  state.receiptCompanyDiscount = false;
+  state.amountValue = '';
+  if(hasCompanyDiscount){
+    showToast('Boleta registrada con descuento de empresa para ' + cust.name + ' — no suma sello.');
+  } else {
+    showToast(justCompleted ? '¡'+cust.name+' completó sus '+STAMPS_GOAL+' sellos! Confirmá el canje cuando le entregues el café.' : 'Sello agregado a ' + cust.name + ' (boleta N° ' + receipt + ')');
+  }
+  if(state.me && state.me.id === customerId){ state.me = cust; }
+  render();
+}
+
+async function redeemFree(customerId){
+  if(!state.isAdmin){ showToast('Solo un administrador puede activar el café gratis.'); return; }
+  const snap = await fsGetDoc(fsDoc(db, 'customers', customerId));
+  if(!snap.exists()) return;
+  let cust = { id: customerId, ...snap.data() };
+  if((cust.stamps||0) < STAMPS_GOAL){ showToast('Este cliente todavía no llega a '+STAMPS_GOAL+' sellos.'); return; }
+  cust.stamps = 0;
+  cust.redeemed = (cust.redeemed||0) + 1;
+  cust.history = cust.history || [];
+  cust.history.unshift({ ts: Date.now(), redemption: true });
+  cust.history = cust.history.slice(0, 500);
+  await saveCustomer(cust);
+  await loadAllCustomers();
+  showToast('☕ Café gratis canjeado para ' + cust.name + '. Su tarjeta vuelve a empezar en 0.');
+  if(state.me && state.me.id === customerId){ state.me = cust; }
+  render();
+}
+
+function topTastes(cust, n){
+  const profile = cust.tasteProfile || {};
+  return Object.entries(profile).sort((a,b)=>b[1]-a[1]).slice(0, n||3).map(e=>e[0]);
+}
+
+function matchesSearch(c, q){
+  if(!q) return true;
+  const needle = q.trim().toLowerCase();
+  if(!needle) return true;
+  return (c.name||'').toLowerCase().startsWith(needle)
+    || (c.phone||'').toLowerCase().startsWith(needle)
+    || (c.email||'').toLowerCase().startsWith(needle)
+    || (c.id||'').toLowerCase().startsWith(needle);
+}
+
+function fmtBirthday(b){
+  if(!b) return '';
+  const parts = b.split('-');
+  if(parts.length !== 3) return b;
+  const [y, m, d] = parts;
+  return d + '/' + m + '/' + y;
+}
+
+function isBirthdayToday(cust){
+  if(!cust.birthday) return false;
+  const parts = cust.birthday.split('-');
+  if(parts.length !== 3) return false;
+  const today = new Date();
+  return parseInt(parts[2],10) === today.getDate() && parseInt(parts[1],10) === (today.getMonth()+1);
+}
+
+function daySelectOptions(selected){
+  let o = '<option value="">Día</option>';
+  for(let d=1; d<=31; d++){
+    o += '<option value="'+d+'"'+(String(d)===String(selected)?' selected':'')+'>'+d+'</option>';
+  }
+  return o;
+}
+
+function monthSelectOptions(selected){
+  const months = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  let o = '<option value="">Mes</option>';
+  months.forEach((m,i)=>{
+    const v = i+1;
+    o += '<option value="'+v+'"'+(String(v)===String(selected)?' selected':'')+'>'+m+'</option>';
+  });
+  return o;
+}
+
+function yearSelectOptions(selected){
+  const current = new Date().getFullYear();
+  let o = '<option value="">Año</option>';
+  for(let y=current; y>=current-90; y--){
+    o += '<option value="'+y+'"'+(String(y)===String(selected)?' selected':'')+'>'+y+'</option>';
+  }
+  return o;
+}
+
+function splitBirthday(b){
+  if(!b) return { day:'', month:'', year:'' };
+  const parts = b.split('-');
+  if(parts.length !== 3) return { day:'', month:'', year:'' };
+  return { year: String(parseInt(parts[0],10)), month: String(parseInt(parts[1],10)), day: String(parseInt(parts[2],10)) };
+}
+
+function ringPositions(n, radius){
+  const pts = [];
+  for(let i=0;i<n;i++){
+    const angle = (i / n) * 2 * Math.PI - Math.PI/2;
+    pts.push({ x: radius * Math.cos(angle), y: radius * Math.sin(angle) });
+  }
+  return pts;
+}
+
+function renderRing(stamps){
+  const shown = Math.min(stamps, STAMPS_GOAL);
+  const radius = 104;
+  const pts = ringPositions(STAMPS_GOAL, radius);
+  let html = '<div class="ring-wrap"><svg class="ring-svg" viewBox="-130 -130 260 260">';
+  html += '<circle cx="0" cy="0" r="'+radius+'" fill="none" stroke="rgba(33,31,26,0.16)" stroke-width="1.5" stroke-dasharray="2 6"/>';
+  html += '</svg>';
+  pts.forEach((p, i)=>{
+    const filled = i < shown;
+    html += '<div class="stamp-dot" style="left:calc(50% + '+p.x+'px - 16px); top:calc(50% + '+p.y+'px - 16px);">'
+      + (filled ? '<div class="filled">'+markSVG(15,'#211F1A')+'</div>' : '<div class="empty"></div>')
+      + '</div>';
+  });
+  html += '<div class="ring-center">'
+    + '<div class="mark-mini">'+markSVG(20,'#565C46')+'</div>'
+    + '<div class="count">'+shown+'<span class="of">/'+STAMPS_GOAL+'</span></div><div class="caption">sellos</div></div>';
+  html += '</div>';
+  return html;
+}
+
+function renderQR(containerId, text){
+  setTimeout(()=>{
+    const el = document.getElementById(containerId);
+    if(el && window.QRCode){
+      el.innerHTML = '';
+      new QRCode(el, { text, width: 128, height:128, colorDark:'#211F1A', colorLight:'#ffffff' });
+    }
+  }, 0);
+}
+
+function renderCustomerCard(cust, isOwn){
+  const tierLabel = cust.redeemed>=3?'Oro':cust.redeemed>=1?'Plata':'Básico';
+  let html = '<div class="card">';
+  html += '<div class="card-wordmark"><div class="card-wordmark-row">'+markSVG(26,'#E7B94E')+'<span class="card-wordmark-word">NOR\u0100I</span></div><div class="card-wordmark-sub">Café Club</div></div>';
+  html += '<div class="card-top"><div><div class="name">'+cust.name+'</div></div>'
+    + '<div class="tier">Nivel<b>'+tierLabel+'</b></div></div>';
+
+  if(cust.companyStatus === 'approved' && cust.company && cust.company.active !== false && cust.companyEnabled !== false){
+    html += '<div class="free-banner" style="background:rgba(231,185,78,0.22); border-color:rgba(231,185,78,0.55); color:var(--mustard);">🏢 Beneficio '+cust.company.name+': '+cust.company.discount+'</div>';
+  } else if(cust.companyStatus === 'pending'){
+    html += '<div class="free-banner">Tu código de empresa está en revisión.</div>';
+  }
+
+  if(cust.disabled){
+    html += '<div class="free-banner" style="background:rgba(230,120,90,0.16); border-color:rgba(230,120,90,0.4);">Esta tarjeta está deshabilitada temporalmente. Contactá al local para más información.</div>';
+  } else {
+    html += renderRing(cust.stamps);
+    if(cust.stamps >= STAMPS_GOAL){
+      html += '<div class="free-banner" style="background:rgba(231,185,78,0.22); border-color:rgba(231,185,78,0.55); color:var(--mustard);">🎉 ¡Felicitaciones! Ven a canjear tu café gratis.</div>';
+    } else if(cust.stamps === 0 && cust.redeemed > 0){
+      html += '<div class="free-banner">Ya canjeaste '+cust.redeemed+' café(s) gratis. ¡Seguí sumando!</div>';
+    }
+    const qrId = 'qr-canvas-' + cust.id;
+    html += '<div class="qr-box"><div class="qr-frame"><div id="'+qrId+'"></div></div></div>';
+  }
+  html += '<div class="id-line">ID '+cust.id+'</div>';
+  if(isOwn && !cust.disabled){
+    const star = '<svg viewBox="0 0 24 24"><path d="M12 2l2.9 6.26L22 9.27l-5 4.87L18.18 21 12 17.27 5.82 21 7 14.14l-5-4.87 7.1-1.01L12 2z"/></svg>';
+    const googleWord = '<span class="google-wordmark-inline"><span style="color:#4285F4;">G</span><span style="color:#EA4335;">o</span><span style="color:#FBBC05;">o</span><span style="color:#4285F4;">g</span><span style="color:#34A853;">l</span><span style="color:#EA4335;">e</span></span>';
+    html += '<a href="'+GOOGLE_REVIEW_URL+'" target="_blank" rel="noopener" class="review-btn">'
+      + '<div class="review-btn-text">Déjanos tu reseña en '+googleWord+'<span class="review-stars">'+star+star+star+star+star+'</span></div>'
+      + '</a>';
+  }
+  html += '<div class="card-address">Fidel Oteiza 1923 · Providencia</div>';
+  html += '</div>';
+
+  const clientHist = (cust.history || []).slice().sort((a,b)=>b.ts-a.ts);
+  html += '<div class="receipt-box" style="margin-top:16px;">';
+  html += '<div class="section-label" style="margin-top:0;">'+(isOwn ? 'Tus sellos' : 'Sellos de '+cust.name)+'</div>';
+  if(clientHist.length === 0){
+    html += '<div class="history-empty">Todavía no '+(isOwn ? 'tenés' : 'tiene')+' sellos registrados'+(isOwn ? '. Pedí que te lo sumen en caja al retirar tu café.' : '.')+'</div>';
+  } else {
+    clientHist.slice(0,10).forEach(h=>{
+      const d = new Date(h.ts);
+      const when = d.toLocaleDateString()+' · '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+      if(h.redemption){
+        html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--mustard-deep);">🎉 Café gratis</b></div>';
+      } else if(h.companyDiscount){
+        html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--olive);">🏢 Con descuento</b></div>';
+      } else {
+        html += '<div class="history-item"><span>'+when+'</span><b>Café ☕</b></div>';
+      }
+    });
+  }
+  html += '</div>';
+
+  if(isOwn && !cust.disabled){
+    html += '<p class="note">Mostrá este código QR en caja para que sumen tu sello. En una versión conectada a Apple Wallet / Google Wallet, esta misma tarjeta viviría directamente en tu celular sin abrir esta página.</p>';
+    if(!cust.companyStatus){
+      if(state.showCompanyForm){
+        html += '<div class="field" style="margin-top:10px;"><label>Código de empresa</label>'
+          + '<input id="company-code-input" placeholder="Ej: ACME2026" value="'+(state.companyCodeInput||'').replace(/"/g,'&quot;')+'" oninput="state.companyCodeInput=this.value;"></div>';
+        html += '<div class="field"><label>Tu RUT</label>'
+          + '<input id="company-rut-input" placeholder="Ej: 12.345.678-9" value="'+(state.companyRutInput||'').replace(/"/g,'&quot;')+'" oninput="state.companyRutInput=this.value;"></div>';
+        html += '<p class="note" style="margin-top:0;">Pedimos tu RUT solo para que el local pueda verificar que sos vos quien activa el descuento de tu empresa.</p>';
+        html += '<div class="action-row"><button class="btn secondary" onclick="state.showCompanyForm=false; render();">Cancelar</button><button class="btn" onclick="requestCompanyCode()">Enviar</button></div>';
+      } else {
+        html += '<button class="link-btn" onclick="state.showCompanyForm=true; render();">¿Tenés un código de empresa?</button><br>';
+      }
+    }
+    html += '<button class="link-btn" onclick="resetMe()">Salir de esta cuenta (demo)</button>';
+  } else if(isOwn && cust.disabled){
+    html += '<button class="link-btn" onclick="resetMe()">Salir de esta cuenta (demo)</button>';
+  } else {
+    html += '<p class="note">Así es exactamente lo que ve este cliente en su celular: solo sus sellos y fechas. Nunca ve los productos ni su perfil de gustos — eso queda únicamente acá, en el panel de Personal.</p>';
+  }
+
+  if(!cust.disabled){
+    renderQR('qr-canvas-' + cust.id, 'NORAI:' + cust.id);
+  }
+  return html;
+}
+
+function restoreFocus(focusInfo){
+  if(!focusInfo) return;
+  const el = document.getElementById(focusInfo.id);
+  if(el){
+    el.focus();
+    try{ el.setSelectionRange(focusInfo.start, focusInfo.end); }catch(e){}
+  }
+}
+
+function render(){
+  const app = document.getElementById('app');
+  const active = document.activeElement;
+  const focusInfo = (active && app.contains(active) && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA'))
+    ? { id: active.id, start: active.selectionStart, end: active.selectionEnd }
+    : null;
+  let html = '';
+
+  if(state.configError){
+    html += '<div style="padding:40px 24px; max-width:480px; margin:0 auto;">'
+      + '<div class="brand" style="margin-bottom:20px;">'+markSVG(26,'#F2EEE3')+'<div><div class="word">NOR\u0100I</div><div class="tag">Café Club</div></div></div>'
+      + '<div class="receipt-box"><div class="section-label" style="margin-top:0;">Falta conectar Firebase</div>'
+      + '<p style="font-size:0.85rem; color:var(--ink); line-height:1.6; margin:0;">'+state.configError+'</p></div>'
+      + '</div>';
+    app.innerHTML = html;
+    return;
+  }
+
+  html += '<div class="topnav"><div class="brand">'+markSVG(26,'#F2EEE3')
+    + '<div><div class="word">NOR\u0100I</div><div class="tag">Café Club</div></div></div>';
+  html += '<div class="mode-toggle">'
+    + '<button onclick="switchMode(\'customer\')" class="'+(state.mode==='customer'?'active':'')+'">Cliente</button>'
+    + '<button onclick="switchMode(\'staff\')" class="'+(state.mode==='staff'?'active':'')+'">Personal</button>'
+    + '<button onclick="switchMode(\'preview\')" class="'+(state.mode==='preview'?'active':'')+'">Tarjetas</button>'
+    + '</div></div>';
+
+  html += '<main>';
+
+  if(state.mode === 'customer'){
+    if(state.screen === 'loading'){
+      html += '<p class="sub">Cargando...</p>';
+    } else if(state.screen === 'register'){
+      html += '<h1 class="hero">Sumate al club</h1>';
+      html += '<p class="sub">Registrate una vez y acumulá un sello por cada café. Al llegar a '+STAMPS_GOAL+', el próximo va por nuestra cuenta.</p>';
+      html += '<div class="field"><label>Nombre</label><input id="reg-name" placeholder="Tu nombre"></div>';
+      html += '<div class="field"><label>Teléfono</label><input id="reg-phone" placeholder="+569 1234 5678" value="+569 "></div>';
+      html += '<div class="field"><label>Email</label><input id="reg-email" placeholder="tu@email.com"></div>';
+      html += '<div class="field"><label>Fecha de nacimiento</label><div class="bday-row">'
+        + '<select id="reg-bday-day">'+daySelectOptions()+'</select>'
+        + '<select id="reg-bday-month" style="flex:1.5;">'+monthSelectOptions()+'</select>'
+        + '<select id="reg-bday-year" style="flex:1.3;">'+yearSelectOptions()+'</select>'
+        + '</div></div>';
+      html += '<div class="consent"><input type="checkbox" id="reg-consent"><span>Acepto recibir novedades, ofertas y promociones de Norāi Café Club por email o SMS. Podés darte de baja cuando quieras.</span></div>';
+      html += '<button class="btn" onclick="handleRegister()">Crear mi tarjeta</button>';
+    } else if(state.screen === 'card'){
+      html += renderCustomerCard(state.me, true);
+    }
+  } else if(state.mode === 'preview'){
+    // demo-only tab: staff can open any registered card exactly as the customer sees it
+    html += '<div style="display:flex; justify-content:space-between; align-items:center;"><h1 class="hero" style="margin-bottom:0;">Vista previa de tarjetas</h1>'
+      + '<button class="mini-btn" onclick="refreshPreview()">🔄 Actualizar</button></div>';
+    html += '<p class="sub">Elegí un cliente para ver exactamente lo que él ve en su celular, a medida que le van cargando sellos.</p>';
+
+    if(!state.isAdmin){
+      html += '<div class="empty-state" style="padding:40px 20px;">🔒 Iniciá sesión como administrador en la pestaña "Personal" para ver esta información.</div>';
+    } else {
+
+    html += '<div class="field" style="margin-bottom:14px;"><input id="preview-search" placeholder="Buscar por nombre, teléfono, email o ID..." value="'+(state.previewSearch||'').replace(/"/g,'&quot;')+'" oninput="state.previewSearch=this.value; render();"></div>';
+
+    const filteredPreview = state.allCustomers.filter(c => matchesSearch(c, state.previewSearch));
+    html += '<div class="section-label">Clientes registrados ('+filteredPreview.length+(state.previewSearch ? ' de '+state.allCustomers.length : '')+')</div>';
+    if(state.allCustomers.length === 0){
+      html += '<div class="empty-state">Todavía no hay clientes registrados.<br>Pedile a alguien que se registre desde la pestaña "Cliente".</div>';
+    } else if(filteredPreview.length === 0){
+      html += '<div class="empty-state">Ningún cliente coincide con esa búsqueda.</div>';
+    } else {
+      html += '<div class="staff-list">';
+      filteredPreview.forEach(c=>{
+        const sel = state.previewCustomerId === c.id;
+        html += '<div class="customer-block">';
+        html += '<div class="cust-row '+(sel?'selected':'')+'" onclick="selectPreview(\''+c.id+'\')">'
+          + '<div><div class="cname">'+c.name+'<span class="cid">#'+c.id+'</span></div><div class="cmeta">'+(c.phone||c.email||'')+'</div></div>'
+          + '<div class="cstamps">'+Math.min(c.stamps, STAMPS_GOAL)+'/'+STAMPS_GOAL+'</div>'
+          + '</div>';
+
+        if(sel){
+          if(c.companyStatus === 'approved' && c.companyCode){
+            c.company = state.allCompanies.find(x => x.id === c.companyCode) || null;
+          }
+          html += '<div class="phone-mock" style="margin-top:10px;">';
+          html += '<div class="phone-mock-header">'+markSVG(22,'#F2EEE3')+'<div><div class="word">NOR\u0100I</div><div class="tag">Café Club</div></div></div>';
+          html += '<div class="phone-mock-body">'+renderCustomerCard(c, false)+'</div>';
+          html += '</div>';
+        }
+
+        html += '</div>'; // customer-block
+      });
+      html += '</div>';
+    }
+
+    } // fin del bloque protegido por login de administrador
+  } else {
+    // staff mode
+    html += '<h1 class="hero">Panel del local</h1>';
+    html += '<p class="sub">Iniciá sesión como administrador para ver los clientes registrados, sumarles sellos por sus compras y gestionar empresas.</p>';
+
+    html += '<div class="receipt-box" style="margin-bottom:18px;">';
+    if(state.isAdmin){
+      html += '<div class="who" style="margin-bottom:10px; display:flex; align-items:center; gap:8px;">'
+        + '<span style="width:8px; height:8px; border-radius:50%; background:#4C7A4C; display:inline-block; flex-shrink:0;"></span>'
+        + '<span><b>Conectado a la nube</b> como '+state.adminEmail+'</span></div>';
+      html += '<div class="action-row">'
+        + '<button class="btn secondary" onclick="openReportModal()">📊 Ver informes</button>'
+        + '<button class="btn secondary" style="color:var(--danger); border-color:rgba(166,67,43,0.4);" onclick="exitAdmin()">Desconectar</button>'
+        + '</div>';
+    } else {
+      html += '<div class="who">Iniciá sesión para acceder al panel.</div>';
+      html += '<div class="field" style="margin-bottom:8px;"><label>Email</label><input id="admin-email" placeholder="admin@norai.cl" value="'+(state.adminEmailInput||'').replace(/"/g,'&quot;')+'" oninput="state.adminEmailInput=this.value;"></div>';
+      html += '<div class="field" style="margin-bottom:8px;"><label>Contraseña</label><input id="admin-password" type="password" placeholder="••••••••" value="'+(state.adminPasswordInput||'').replace(/"/g,'&quot;')+'" oninput="state.adminPasswordInput=this.value;"></div>';
+      html += '<button class="btn secondary" onclick="adminSignInEmail()">Ingresar</button>';
+      html += '<div style="text-align:center; font-size:0.7rem; color:var(--muted); margin:10px 0;">o</div>';
+      html += '<button class="btn" onclick="adminSignInGoogle()">Continuar con Google</button>';
+    }
+    html += '</div>';
+
+    if(!state.isAdmin){
+      html += '<div class="empty-state" style="padding:40px 20px;">🔒 Iniciá sesión como administrador arriba para ver los clientes registrados y poder sumarles sellos por sus compras.</div>';
+    } else {
+
+    html += '<div class="field" style="margin-bottom:14px;"><input id="staff-search" placeholder="Buscar por nombre, teléfono, email o ID..." value="'+(state.staffSearch||'').replace(/"/g,'&quot;')+'" oninput="state.staffSearch=this.value; render();"></div>';
+
+    const filteredStaff = state.allCustomers.filter(c => matchesSearch(c, state.staffSearch));
+    html += '<div class="section-label">Clientes registrados ('+filteredStaff.length+(state.staffSearch ? ' de '+state.allCustomers.length : '')+')</div>';
+
+    if(state.allCustomers.length === 0){
+      html += '<div class="empty-state">Todavía no hay clientes registrados.<br>Pedile a alguien que se registre desde la pestaña "Cliente".</div>';
+    } else if(filteredStaff.length === 0){
+      html += '<div class="empty-state">Ningún cliente coincide con esa búsqueda.</div>';
+    } else {
+      html += '<div class="staff-list">';
+      filteredStaff.forEach(c=>{
+        const sel = state.selectedCustomerId === c.id;
+        const tastes = topTastes(c, 2);
+
+        html += '<div class="customer-block">';
+        html += '<div class="cust-row '+(sel?'selected':'')+'" style="'+(c.disabled?'opacity:0.55;':'')+'">';
+        html += '<div style="flex:1; min-width:0; overflow:hidden;" onclick="selectCustomer(\''+c.id+'\')">'
+          + '<div class="cname">'+c.name+'<span class="cid">#'+c.id+'</span>'+(c.disabled ? ' <span style="color:var(--danger); font-size:0.6rem; text-transform:uppercase;">· Deshabilitado</span>' : '')+(isBirthdayToday(c) ? ' <span style="color:var(--mustard-deep); font-size:0.62rem;">🎂 Cumpleaños</span>' : '')+'</div>'
+          + '<div class="cmeta">'+(c.phone||c.email||'')+' · '+(c.redeemed||0)+' gratis canjeados</div>'
+          + (tastes.length ? '<div class="cmeta" style="color:var(--olive);">Le gusta: '+tastes.join(', ')+'</div>' : '')
+          + '</div>';
+        html += '<div style="display:flex; align-items:center; gap:8px; flex-shrink:0;">';
+        if(state.isAdmin){
+          html += '<div class="mini-actions">'
+            + '<button class="mini-btn" onclick="event.stopPropagation(); toggleAdminEdit(\''+c.id+'\')">Editar</button>'
+            + '<button class="mini-btn '+(c.disabled?'':'danger')+'" onclick="event.stopPropagation(); toggleDisabled(\''+c.id+'\')">'+(c.disabled?'Habilitar':'Deshabilitar')+'</button>'
+            + '</div>';
+        }
+        html += '<div class="cstamps" onclick="selectCustomer(\''+c.id+'\')">'+Math.min(c.stamps, STAMPS_GOAL)+'/'+STAMPS_GOAL+((c.stamps>=STAMPS_GOAL && !c.disabled) ? '<div style="font-size:0.58rem; color:var(--mustard-deep); text-transform:uppercase; letter-spacing:0.02em; margin-top:2px;">🎉 Canjear</div>' : '')+'</div>';
+        html += '</div>';
+        html += '</div>'; // end cust-row
+
+        if(state.isAdmin && state.adminEditingId === c.id){
+          html += '<div class="customer-expand">';
+          html += '<div class="field" style="margin-bottom:8px;"><label>Teléfono</label>'
+            + '<input id="admin-edit-phone" value="'+(state.adminEditPhone||'').replace(/"/g,'&quot;')+'" oninput="state.adminEditPhone=this.value;"></div>';
+          html += '<div class="field" style="margin-bottom:8px;"><label>Email</label>'
+            + '<input id="admin-edit-email" value="'+(state.adminEditEmail||'').replace(/"/g,'&quot;')+'" oninput="state.adminEditEmail=this.value;"></div>';
+          html += '<div class="field" style="margin-bottom:8px;"><label>Fecha de nacimiento</label><div class="bday-row">'
+            + '<select id="admin-edit-bday-day" onchange="state.adminEditBirthDay=this.value;">'+daySelectOptions(state.adminEditBirthDay)+'</select>'
+            + '<select id="admin-edit-bday-month" style="flex:1.5;" onchange="state.adminEditBirthMonth=this.value;">'+monthSelectOptions(state.adminEditBirthMonth)+'</select>'
+            + '<select id="admin-edit-bday-year" style="flex:1.3;" onchange="state.adminEditBirthYear=this.value;">'+yearSelectOptions(state.adminEditBirthYear)+'</select>'
+            + '</div></div>';
+          html += '<div class="field" style="margin-bottom:8px;"><label>Comentario interno (solo staff)</label>'
+            + '<textarea id="admin-edit-note" placeholder="Ej: prefiere leche de avena, alérgico a la canela..." oninput="state.adminEditNote=this.value;">'+(state.adminEditNote||'')+'</textarea></div>';
+          html += '<div class="action-row">'
+            + '<button class="btn secondary" onclick="toggleAdminEdit(null)">Cancelar</button>'
+            + '<button class="btn" onclick="saveAdminEdit(\''+c.id+'\')">Guardar</button>'
+            + '</div>';
+          html += '</div>';
+        }
+
+        if(sel){
+          html += '<div class="customer-expand">';
+          html += '<div style="font-size:0.78rem; color:var(--muted); line-height:1.7; margin-bottom:12px;">';
+          html += '<div><b style="color:var(--ink);">ID:</b> #'+c.id+'</div>';
+          if(c.phone) html += '<div><b style="color:var(--ink);">Teléfono:</b> '+c.phone+'</div>';
+          if(c.email) html += '<div><b style="color:var(--ink);">Email:</b> '+c.email+'</div>';
+          if(c.birthday) html += '<div><b style="color:var(--ink);">Cumpleaños:</b> '+fmtBirthday(c.birthday)+(isBirthdayToday(c) ? ' 🎂 ¡Hoy!' : '')+'</div>';
+          if(c.companyStatus === 'approved'){
+            const co = state.allCompanies.find(x => x.id === c.companyCode);
+            html += '<div><b style="color:var(--ink);">Empresa:</b> '+(co ? co.name+' — '+co.discount+(co.active?'':' (empresa inactiva)') : c.companyCode)+(c.companyEnabled===false?' (deshabilitado para este cliente)':'')+'</div>';
+          } else if(c.companyStatus === 'pending'){
+            html += '<div><b style="color:var(--ink);">Empresa:</b> solicitud pendiente ('+c.companyCode+')</div>';
+          }
+          html += '<div><b style="color:var(--ink);">Café(s) gratis canjeados:</b> '+(c.redeemed||0)+'</div>';
+          const allTastes = topTastes(c, 6);
+          if(allTastes.length) html += '<div><b style="color:var(--ink);">Le gusta:</b> '+allTastes.join(', ')+'</div>';
+          if(c.internalNote) html += '<div style="margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);"><b style="color:var(--ink);">Nota interna:</b> '+c.internalNote+'</div>';
+          html += '</div>';
+
+          if(!c.disabled && c.stamps >= STAMPS_GOAL){
+            html += '<div class="free-banner" style="margin:0 0 12px; background:rgba(231,185,78,0.18); border-color:rgba(231,185,78,0.5); color:var(--mustard-deep);">🎉 ¡Felicitaciones! <b>'+c.name+'</b> completó sus '+STAMPS_GOAL+' sellos y tiene un café gratis esperando.</div>';
+            if(state.isAdmin){
+              html += '<div class="action-row"><button class="btn" onclick="redeemFree(\''+c.id+'\')">Activar café gratis</button></div>';
+            } else {
+              html += '<p class="note" style="margin-top:0;">Solo un administrador puede activar el café gratis y reiniciar sus sellos. Pedile a un administrador que entre con su PIN.</p>';
+            }
+          } else if(c.disabled){
+            html += '<p class="note" style="margin-top:0;">Este cliente está deshabilitado — no se le pueden sumar sellos hasta que un administrador lo habilite.</p>';
+          } else {
+            const co = state.allCompanies.find(x => x.id === c.companyCode);
+            const activeCompanyBenefit = c.companyStatus === 'approved' && !!co && co.active !== false && c.companyEnabled !== false;
+
+            html += '<div class="field" style="margin-bottom:8px;"><label>N° de boleta</label>'
+              + '<input id="receipt-input" placeholder="Ej: 004582" value="'+(state.receiptValue||'').replace(/"/g,'&quot;')+'" oninput="state.receiptValue=this.value; state.receiptWarning=\'\';"></div>';
+            html += '<div class="field" style="margin-bottom:8px;"><label>Productos de esta compra</label>'
+              + '<input id="products-input" placeholder="Ej: Cappuccino, Croissant" value="'+(state.productsValue||'').replace(/"/g,'&quot;')+'" oninput="state.productsValue=this.value;"></div>';
+            html += '<div class="field" style="margin-bottom:8px;"><label>Monto ($)</label>'
+              + '<input id="amount-input" type="number" inputmode="decimal" placeholder="Ej: 4500" value="'+(state.amountValue||'').toString().replace(/"/g,'&quot;')+'" oninput="state.amountValue=this.value;"></div>';
+            if(activeCompanyBenefit){
+              html += '<div class="checkbox-row" style="margin-bottom:6px; align-items:flex-start;">'
+                + '<input type="checkbox" checked disabled style="margin-top:2px;">'
+                + '<span style="font-size:0.78rem;">Esta boleta tiene descuento de empresa aplicado (no suma sello — los descuentos de empresa no se combinan con otras promociones)</span></div>';
+              html += '<p class="note" style="margin-top:0; margin-bottom:10px;">'+c.name+' tiene activo el descuento de <b>'+co.name+'</b> ('+co.discount+'). Mientras esté activo, todas sus compras usan ese descuento y no suman sello. Para volver a sumar sellos, desactivá su beneficio desde "Empresas con descuento".</p>';
+            } else {
+              html += '<div class="checkbox-row" style="margin-bottom:10px; align-items:flex-start;">'
+                + '<input type="checkbox" id="receipt-company-discount" style="margin-top:2px;" '+(state.receiptCompanyDiscount?'checked':'')+' onchange="state.receiptCompanyDiscount=this.checked;">'
+                + '<span style="font-size:0.78rem;">Esta boleta tiene descuento de empresa aplicado (no suma sello — los descuentos de empresa no se combinan con otras promociones)</span></div>';
+            }
+            if(state.receiptWarning){
+              html += '<div class="warn-text">'+state.receiptWarning+'</div>';
+            }
+            html += '<div class="action-row"><button class="btn" onclick="addStamp(\''+c.id+'\')">Sumar sello</button></div>';
+          }
+
+          const hist = c.history || [];
+          html += '<div class="history-list"><div class="section-label" style="margin:14px 0 6px;">Actividad reciente</div>';
+          if(hist.length === 0){
+            html += '<div class="history-empty">Todavía no hay actividad registrada para este cliente.</div>';
+          } else {
+            hist.slice(0,5).forEach(h=>{
+              const d = new Date(h.ts);
+              const when = d.toLocaleDateString()+' '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+              if(h.redemption){
+                html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--mustard-deep);">🎉 Canje gratis</b></div>';
+              } else {
+                html += '<div class="history-item"><span>'+when+(h.products && h.products.length ? ' · '+h.products.join(', ') : '')+(h.amount != null ? ' · $'+h.amount : '')+(h.companyDiscount ? ' · 🏢 con descuento (no sumó sello)' : '')+'</span><b>N° '+h.receipt+'</b></div>';
+              }
+            });
+          }
+          html += '</div>';
+          html += '</div>'; // end customer-expand
+        }
+
+        html += '</div>'; // end customer-block
+      });
+      html += '</div>';
+    }
+
+    if(state.isAdmin){
+      html += '<div class="section-label">Empresas con descuento</div>';
+      html += '<div class="receipt-box" style="margin-bottom:14px;">';
+      html += '<div class="field" style="margin-bottom:8px;"><label>Nombre de la empresa</label>'
+        + '<input id="new-company-name" value="'+(state.newCompanyName||'').replace(/"/g,'&quot;')+'" oninput="state.newCompanyName=this.value;"></div>';
+      html += '<div class="field" style="margin-bottom:8px;"><label>Código (para compartir con sus empleados)</label>'
+        + '<input id="new-company-code" placeholder="Ej: ACME2026" value="'+(state.newCompanyCode||'').replace(/"/g,'&quot;')+'" oninput="state.newCompanyCode=this.value;"></div>';
+      html += '<div class="field" style="margin-bottom:8px;"><label>Descuento</label>'
+        + '<input id="new-company-discount" placeholder="Ej: 15% en toda compra" value="'+(state.newCompanyDiscount||'').replace(/"/g,'&quot;')+'" oninput="state.newCompanyDiscount=this.value;"></div>';
+      html += '<button class="btn secondary" onclick="createCompany()">Crear empresa</button>';
+      html += '<p class="note" style="margin-top:10px; margin-bottom:0;">Los descuentos de empresa no se combinan con otras promociones: una boleta marcada "con descuento de empresa" no suma sello para el café gratis.</p>';
+      html += '</div>';
+
+      if(state.allCompanies.length === 0){
+        html += '<div class="empty-state" style="padding:14px 10px;">Todavía no creaste ninguna empresa.</div>';
+      } else {
+        html += '<div class="staff-list" style="margin-bottom:14px;">';
+        state.allCompanies.forEach(co=>{
+          const expanded = state.expandedCompanyId === co.id;
+          const editingCompany = state.editingCompanyId === co.id;
+          const companyClients = state.allCustomers.filter(c => c.companyCode === co.id && (c.companyStatus === 'approved' || c.companyStatus === 'pending'));
+          const approvedCount = companyClients.filter(c => c.companyStatus === 'approved').length;
+
+          html += '<div class="customer-block">';
+          html += '<div class="cust-row '+(expanded?'selected':'')+'">'
+            + '<div style="flex:1; min-width:0;" onclick="toggleCompanyExpand(\''+co.id+'\')">'
+              + '<div class="cname">'+co.name+'<span class="cid">#'+co.id+'</span>'+(co.active ? '' : ' <span style="color:var(--danger); font-size:0.6rem; text-transform:uppercase;">· Inactiva</span>')+'</div>'
+              + '<div class="cmeta">'+co.discount+' · '+approvedCount+' cliente(s)</div>'
+              + '</div>'
+            + '<div class="mini-actions">'
+              + '<button class="mini-btn" onclick="event.stopPropagation(); toggleCompanyEditForm(\''+co.id+'\')">Modificar</button>'
+              + '<button class="mini-btn '+(co.active?'danger':'')+'" onclick="event.stopPropagation(); toggleCompanyActive(\''+co.id+'\')">'+(co.active?'Desactivar':'Activar')+'</button>'
+              + '</div>'
+            + '</div>';
+
+          if(editingCompany){
+            html += '<div class="customer-expand">';
+            html += '<div class="field" style="margin-bottom:8px;"><label>Nombre de la empresa</label>'
+              + '<input id="edit-company-name" value="'+(state.editCompanyName||'').replace(/"/g,'&quot;')+'" oninput="state.editCompanyName=this.value;"></div>';
+            html += '<div class="field" style="margin-bottom:8px;"><label>Descuento</label>'
+              + '<input id="edit-company-discount" value="'+(state.editCompanyDiscount||'').replace(/"/g,'&quot;')+'" oninput="state.editCompanyDiscount=this.value;"></div>';
+            html += '<p class="note" style="margin-top:0;">El código (#'+co.id+') no se puede modificar, ya lo tienen sus empleados. Los cambios de nombre y descuento se reflejan al instante para todos los clientes vinculados.</p>';
+            html += '<div class="action-row">'
+              + '<button class="btn secondary" onclick="toggleCompanyEditForm(null)">Cancelar</button>'
+              + '<button class="btn" onclick="saveCompanyEdit(\''+co.id+'\')">Guardar</button>'
+              + '</div>';
+            html += '</div>';
+          }
+
+          if(expanded){
+            html += '<div class="customer-expand">';
+
+            if(companyClients.length === 0){
+              html += '<div class="history-empty">Todavía no hay clientes vinculados a esta empresa.</div>';
+            } else {
+              companyClients.forEach(c=>{
+                const pending = c.companyStatus === 'pending';
+                const clientDisabled = c.companyEnabled === false;
+                const clientExpanded = state.expandedCompanyClientId === c.id;
+                html += '<div class="history-item" style="align-items:center; cursor:pointer;" onclick="toggleCompanyClientExpand(\''+c.id+'\')">'
+                  + '<span>'+c.name+(pending ? ' · pendiente' : clientDisabled ? ' · deshabilitado' : '')+'</span>'
+                  + '<span style="display:flex; gap:6px;" onclick="event.stopPropagation();">'
+                  + (pending
+                      ? '<button class="mini-btn" onclick="approveCompany(\''+c.id+'\')">Aprobar</button><button class="mini-btn danger" onclick="rejectCompany(\''+c.id+'\')">Rechazar</button>'
+                      : '<button class="mini-btn" onclick="setClientCompanyEnabled(\''+c.id+'\', '+(clientDisabled?'true':'false')+')">'+(clientDisabled?'Habilitar':'Deshabilitar')+'</button><button class="mini-btn danger" onclick="removeClientCompany(\''+c.id+'\')">Quitar</button>'
+                    )
+                  + '</span></div>';
+
+                if(clientExpanded){
+                  html += '<div style="padding:6px 4px 16px; font-size:0.78rem; color:var(--muted); line-height:1.7;">';
+                  html += '<div><b style="color:var(--ink);">ID:</b> #'+c.id+'</div>';
+                  if(c.phone) html += '<div><b style="color:var(--ink);">Teléfono:</b> '+c.phone+'</div>';
+                  if(c.email) html += '<div><b style="color:var(--ink);">Email:</b> '+c.email+'</div>';
+                  html += '<div><b style="color:var(--ink);">RUT:</b> '+(c.rut ? formatRut(c.rut) : 'no ingresado')+'</div>';
+                  html += '<div class="field" style="margin-top:8px; margin-bottom:6px;"><label>RUT (verificación de empresa)</label>'
+                    + '<input id="edit-client-rut" placeholder="Ej: 12.345.678-9" value="'+(state.editClientRut||'').replace(/"/g,'&quot;')+'" oninput="state.editClientRut=this.value;"></div>';
+                  html += '<button class="btn secondary" onclick="saveClientRut(\''+c.id+'\')">Guardar RUT</button>';
+                  html += '</div>';
+                }
+              });
+            }
+
+            html += '<div class="field" style="margin-top:12px; margin-bottom:8px;"><label>Agregar cliente a esta empresa</label>'
+              + '<input id="add-company-client-search" placeholder="Buscar por nombre, teléfono, email o ID..." value="'+(state.addCompanyClientSearch||'').replace(/"/g,'&quot;')+'" oninput="state.addCompanyClientSearch=this.value; render();"></div>';
+
+            const q = (state.addCompanyClientSearch||'').trim();
+            if(q){
+              const candidates = state.allCustomers.filter(c => matchesSearch(c, q) && !(c.companyCode === co.id && (c.companyStatus === 'approved' || c.companyStatus === 'pending')));
+              if(candidates.length === 0){
+                html += '<div class="history-empty">Sin coincidencias.</div>';
+              } else {
+                candidates.slice(0,5).forEach(c=>{
+                  html += '<div class="history-item"><span>'+c.name+' <span style="color:var(--muted);">#'+c.id+'</span></span>'
+                    + '<button class="mini-btn" onclick="addClientToCompany(\''+co.id+'\', \''+c.id+'\')">Vincular</button></div>';
+                });
+              }
+            }
+
+            html += '</div>'; // customer-expand
+          }
+          html += '</div>'; // customer-block
+        });
+        html += '</div>';
+      }
+
+      const orphanPending = state.allCustomers.filter(c => c.companyStatus === 'pending' && !state.allCompanies.some(co => co.id === c.companyCode));
+      if(orphanPending.length > 0){
+        html += '<div class="section-label">Solicitudes con código no reconocido ('+orphanPending.length+')</div>';
+        html += '<div class="staff-list" style="margin-bottom:20px;">';
+        orphanPending.forEach(c=>{
+          html += '<div class="cust-row">'
+            + '<div><div class="cname">'+c.name+'</div><div class="cmeta">Código: '+c.companyCode+' · no coincide con ninguna empresa creada</div></div>'
+            + '<button class="mini-btn danger" onclick="rejectCompany(\''+c.id+'\')">Rechazar</button>'
+            + '</div>';
+        });
+        html += '</div>';
+      }
+    }
+
+    html += '<div class="section-label">Enviar promoción</div>';
+    if(state.allCustomers.length === 0){
+      html += '<div class="empty-state">Necesitás al menos un cliente registrado para enviar promociones.</div>';
+    } else {
+      html += '<div class="field" style="margin-bottom:10px;"><label>Buscar por gusto</label>'
+        + '<input id="taste-filter" placeholder="Ej: matcha, croissant" value="'+(state.tasteFilter||'').replace(/"/g,'&quot;')+'" oninput="state.tasteFilter=this.value;"></div>';
+      html += '<button class="btn secondary" style="margin-bottom:14px;" onclick="selectByTaste()">Seleccionar coincidencias</button>';
+      state.allCustomers.forEach(c=>{
+        const checked = state.promoSelected.has(c.id);
+        const tastes = topTastes(c, 3);
+        html += '<div class="checkbox-row" style="margin-bottom:8px; align-items:flex-start;">'
+          + '<input type="checkbox" style="margin-top:2px;" '+(checked?'checked':'')+' onchange="togglePromo(\''+c.id+'\')">'
+          + '<span>'+c.name+(tastes.length ? ' <span style="color:var(--muted-on-dark); font-size:0.78rem;">('+tastes.join(', ')+')</span>' : '')+'</span></div>';
+      });
+      html += '<div class="field" style="margin-top:10px;"><label>Mensaje</label><textarea id="promo-text" placeholder="Ej: Este finde, 2x1 en café con nuestra tarjeta de fidelización">'+state.promoText+'</textarea></div>';
+      html += '<button class="btn secondary" onclick="sendPromo()">Enviar a seleccionados</button>';
+      html += '<p class="note">Esta demo simula el envío. Para mandar SMS/email reales hace falta conectar un proveedor como Twilio o un servicio de email marketing desde un backend.</p>';
+    }
+
+    if(state.allCustomers.length > 0){
+      html += '<p class="note">El N° de boleta y los productos quedan guardados por cliente para cruzarlos contra Toteat y armar su perfil de gustos con el tiempo. Acá se cargan a mano; en producción, al confirmar la boleta, tu backend le pediría a la API de Toteat el detalle de esa orden (los productos vendidos) y completaría este perfil automáticamente, sin que el staff tenga que tipearlo.</p>';
+    }
+
+    } // fin del bloque protegido por login de administrador
+  }
+
+  html += '</main>';
+  if(state.toast) html += '<div class="toast">'+state.toast+'</div>';
+
+  if(state.showReportModal){
+    const { start, end } = getReportDateRange();
+    const summary = reportSummary();
+    html += '<div class="report-backdrop" onclick="if(event.target===event.currentTarget){ closeReportModal(); }">';
+    html += '<div class="report-panel">';
+    html += '<div class="report-header"><h2>Informe de actividad</h2><button class="report-close" onclick="closeReportModal()">✕</button></div>';
+
+    html += '<div class="mode-toggle" style="margin-bottom:16px; width:100%;">'
+      + '<button style="flex:1;" class="'+(state.reportFilterMode==='month'?'active':'')+'" onclick="state.reportFilterMode=\'month\'; render();">Por mes</button>'
+      + '<button style="flex:1;" class="'+(state.reportFilterMode==='range'?'active':'')+'" onclick="state.reportFilterMode=\'range\'; render();">Línea de tiempo</button>'
+      + '</div>';
+
+    if(state.reportFilterMode === 'month'){
+      html += '<div class="bday-row" style="margin-bottom:14px;">'
+        + '<select id="report-month" style="flex:1.5;" onchange="state.reportMonth=this.value; render();">'+monthSelectOptions(state.reportMonth)+'</select>'
+        + '<select id="report-year" style="flex:1.2;" onchange="state.reportYear=this.value; render();">'+yearSelectOptions(state.reportYear)+'</select>'
+        + '</div>';
+    } else {
+      html += '<div style="margin-bottom:16px;">'
+        + '<input type="range" id="report-range-slider" min="1" max="365" value="'+state.reportDaysBack+'" style="width:100%;" '
+          + 'oninput="document.getElementById(\'report-range-label\').textContent=\'Últimos \'+this.value+\' días\';" '
+          + 'onchange="state.reportDaysBack=this.value; render();">'
+        + '<div id="report-range-label" style="text-align:center; font-size:0.8rem; color:var(--muted); margin-top:6px;">Últimos '+state.reportDaysBack+' días</div>'
+        + '</div>';
+    }
+
+    html += '<div style="font-size:0.78rem; color:var(--muted); margin-bottom:4px;">Período: '+start.toLocaleDateString()+' al '+end.toLocaleDateString()+'</div>';
+    html += '<div style="font-family:\'JetBrains Mono\'; font-size:1.05rem; color:var(--ink); margin-bottom:18px;">'+summary.count+' registro'+(summary.count===1?'':'s')+' · $'+summary.total.toLocaleString('es-CL')+' en total</div>';
+
+    html += '<button class="btn" onclick="downloadReport()">⬇ Descargar Excel (.xlsx)</button>';
+    html += '<p class="note" style="margin-top:12px;">Incluye sellos, canjes de café gratis y compras con descuento de empresa, con cliente, boleta, productos, monto y empresa asociada.</p>';
+
+    html += '</div>'; // report-panel
+    html += '</div>'; // report-backdrop
+  }
+
+  app.innerHTML = html;
+  restoreFocus(focusInfo);
+}
+
+function switchMode(m){
+  state.mode = m;
+  state.selectedCustomerId = null;
+  if(m === 'staff' || m === 'preview'){
+    Promise.all([loadAllCustomers(), loadCompanies()]).then(render);
+  } else {
+    render();
+  }
+}
+
+async function refreshPreview(){
+  await Promise.all([loadAllCustomers(), loadCompanies()]);
+  showToast('Datos actualizados');
+  render();
+}
+
+function selectPreview(id){
+  state.previewCustomerId = state.previewCustomerId === id ? null : id;
+  render();
+}
+
+async function adminSignInEmail(){
+  const email = (state.adminEmailInput||'').trim();
+  const password = state.adminPasswordInput||'';
+  if(!email || !password){ showToast('Completá email y contraseña'); return; }
+  try{
+    await authSignInEmail(auth, email, password);
+    state.adminPasswordInput = '';
+  }catch(e){
+    console.error(e);
+    showToast('No se pudo iniciar sesión. Revisá el email y la contraseña.');
+  }
+}
+
+async function adminSignInGoogle(){
+  try{
+    await authSignInGoogle(auth, new GoogleProvider());
+  }catch(e){
+    console.error(e);
+    showToast('No se pudo iniciar sesión con Google.');
+  }
+}
+
+async function exitAdmin(){
+  try{ await authSignOut(auth); }catch(e){ console.error(e); }
+  state.adminEditingId = null;
+  render();
+}
+
+async function createCompany(){
+  if(!state.isAdmin){ showToast('Solo un administrador puede crear empresas.'); return; }
+  const name = (state.newCompanyName||'').trim();
+  const code = (state.newCompanyCode||'').trim().toUpperCase();
+  const discount = (state.newCompanyDiscount||'').trim();
+  if(!name || !code || !discount){ showToast('Completá nombre, código y descuento'); return; }
+  try{
+    const snap = await fsGetDoc(fsDoc(db, 'companies', code));
+    if(snap.exists()){ showToast('Ese código ya existe, elegí otro'); return; }
+    await saveCompany({ id: code, name, discount, active: true, createdAt: Date.now() });
+    state.newCompanyName = '';
+    state.newCompanyCode = '';
+    state.newCompanyDiscount = '';
+    await loadCompanies();
+    showToast('Empresa creada');
+    render();
+  }catch(e){
+    console.error(e);
+    showToast('No se pudo crear la empresa: ' + (e.code || e.message || 'error desconocido'));
+  }
+}
+
+async function toggleCompanyActive(id){
+  if(!state.isAdmin){ showToast('Solo un administrador puede activar/desactivar empresas.'); return; }
+  const co = state.allCompanies.find(x => x.id === id);
+  if(!co) return;
+  await saveCompany({ ...co, active: !co.active });
+  await loadCompanies();
+  render();
+}
+
+async function requestCompanyCode(){
+  const code = (state.companyCodeInput||'').trim().toUpperCase();
+  const rut = (state.companyRutInput||'').trim();
+  if(!code){ showToast('Ingresá un código de empresa'); return; }
+  if(!rut){ showToast('Ingresá tu RUT para poder validar el descuento'); return; }
+  try{
+    const snap = await fsGetDoc(fsDoc(db, 'companies', code));
+    if(!snap.exists()){ showToast('No encontramos ese código. Consultá con tu empresa.'); return; }
+  }catch(e){
+    console.error(e);
+    showToast('No se pudo validar el código: ' + (e.code || e.message || 'error desconocido'));
+    return;
+  }
+  let cust = { ...state.me };
+  cust.companyCode = code;
+  cust.companyStatus = 'pending';
+  cust.rut = formatRut(rut);
+  await saveCustomer(cust);
+  state.me = cust;
+  state.companyCodeInput = '';
+  state.companyRutInput = '';
+  state.showCompanyForm = false;
+  showToast('Solicitud enviada. El local va a revisarla.');
+  render();
+}
+
+async function approveCompany(customerId){
+  if(!state.isAdmin){ showToast('Solo un administrador puede aprobar esto.'); return; }
+  const snap = await fsGetDoc(fsDoc(db, 'customers', customerId));
+  if(!snap.exists()) return;
+  let cust = { id: customerId, ...snap.data() };
+  cust.companyStatus = 'approved';
+  await saveCustomer(cust);
+  await loadAllCustomers();
+  showToast('Beneficio de empresa aprobado para ' + cust.name);
+  render();
+}
+
+async function rejectCompany(customerId){
+  if(!state.isAdmin){ showToast('Solo un administrador puede rechazar esto.'); return; }
+  const snap = await fsGetDoc(fsDoc(db, 'customers', customerId));
+  if(!snap.exists()) return;
+  let cust = { id: customerId, ...snap.data() };
+  cust.companyStatus = null;
+  cust.companyCode = '';
+  await saveCustomer(cust);
+  await loadAllCustomers();
+  showToast('Solicitud rechazada');
+  render();
+}
+
+function getReportDateRange(){
+  if(state.reportFilterMode === 'month'){
+    const y = parseInt(state.reportYear, 10);
+    const m = parseInt(state.reportMonth, 10);
+    const start = new Date(y, m-1, 1, 0, 0, 0);
+    const end = new Date(y, m, 0, 23, 59, 59);
+    return { start, end };
+  } else {
+    const days = parseInt(state.reportDaysBack, 10) || 30;
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - days);
+    start.setHours(0,0,0,0);
+    return { start, end };
+  }
+}
+
+function generateReportRows(){
+  const { start, end } = getReportDateRange();
+  const rows = [];
+  state.allCustomers.forEach(c=>{
+    (c.history || []).forEach(h=>{
+      const d = new Date(h.ts);
+      if(d < start || d > end) return;
+      let tipo = 'Sello';
+      if(h.redemption) tipo = 'Canje café gratis';
+      else if(h.companyDiscount) tipo = 'Con descuento de empresa';
+      rows.push({
+        'Cliente': c.name,
+        'ID Cliente': c.id,
+        'Teléfono': c.phone || '',
+        'Email': c.email || '',
+        'Fecha': d.toLocaleDateString(),
+        'Hora': d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}),
+        'Tipo': tipo,
+        'N° Boleta': h.receipt || '',
+        'Productos': (h.products || []).join(', '),
+        'Monto': h.amount != null ? h.amount : '',
+        'Empresa': h.companyName || '',
+        'Descuento aplicado': h.companyDiscountLabel || ''
+      });
+    });
+  });
+  rows.sort((a,b) => (a['Fecha']+a['Hora']).localeCompare(b['Fecha']+b['Hora']));
+  return rows;
+}
+
+function reportSummary(){
+  const rows = generateReportRows();
+  const total = rows.reduce((sum, r) => sum + (typeof r['Monto'] === 'number' ? r['Monto'] : 0), 0);
+  return { count: rows.length, total };
+}
+
+function downloadReport(){
+  if(!state.isAdmin){ showToast('Solo un administrador puede descargar informes.'); return; }
+  const rows = generateReportRows();
+  if(rows.length === 0){ showToast('No hay registros en ese período.'); return; }
+  try{
+    const ws = XLSX.utils.json_to_sheet(rows);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Informe');
+    XLSX.writeFile(wb, 'norai-informe-' + Date.now() + '.xlsx');
+  }catch(e){
+    console.error(e);
+    showToast('No se pudo generar el Excel.');
+  }
+}
+
+function openReportModal(){
+  state.showReportModal = true;
+  render();
+}
+
+function closeReportModal(){
+  state.showReportModal = false;
+  render();
+}
+
+function formatRut(raw){
+  if(!raw) return '';
+  const clean = raw.toString().toUpperCase().replace(/[^0-9K]/g, '');
+  if(clean.length < 2) return clean;
+  const verifier = clean.slice(-1);
+  const body = clean.slice(0, -1);
+  let withDots = '';
+  let count = 0;
+  for(let i = body.length - 1; i >= 0; i--){
+    withDots = body[i] + withDots;
+    count++;
+    if(count % 3 === 0 && i !== 0){
+      withDots = '.' + withDots;
+    }
+  }
+  return withDots + '-' + verifier;
+}
+
+function toggleCompanyEditForm(id){
+  state.editingCompanyId = id;
+  if(id){
+    const co = state.allCompanies.find(x => x.id === id);
+    state.editCompanyName = co ? co.name : '';
+    state.editCompanyDiscount = co ? co.discount : '';
+  }
+  render();
+}
+
+async function saveCompanyEdit(id){
+  if(!state.isAdmin){ showToast('Solo un administrador puede modificar empresas.'); return; }
+  const name = (state.editCompanyName||'').trim();
+  const discount = (state.editCompanyDiscount||'').trim();
+  if(!name || !discount){ showToast('Completá nombre y descuento'); return; }
+  const co = state.allCompanies.find(x => x.id === id);
+  if(!co) return;
+  await saveCompany({ ...co, name, discount });
+  await loadCompanies();
+  state.editingCompanyId = null;
+  showToast('Empresa actualizada. Los clientes vinculados ven el cambio al instante.');
+  render();
+}
+
+function toggleCompanyClientExpand(customerId){
+  state.expandedCompanyClientId = state.expandedCompanyClientId === customerId ? null : customerId;
+  if(state.expandedCompanyClientId){
+    const c = state.allCustomers.find(x => x.id === customerId);
+    state.editClientRut = c ? (c.rut ? formatRut(c.rut) : '') : '';
+  }
+  render();
+}
+
+async function saveClientRut(customerId){
+  if(!state.isAdmin){ showToast('Solo un administrador puede editar el RUT.'); return; }
+  const snap = await fsGetDoc(fsDoc(db, 'customers', customerId));
+  if(!snap.exists()) return;
+  let cust = { id: customerId, ...snap.data() };
+  cust.rut = formatRut((state.editClientRut||'').trim());
+  await saveCustomer(cust);
+  await loadAllCustomers();
+  showToast('RUT actualizado para ' + cust.name);
+  render();
+}
+
+function toggleCompanyExpand(id){
+  state.expandedCompanyId = state.expandedCompanyId === id ? null : id;
+  state.addCompanyClientSearch = '';
+  render();
+}
+
+async function setClientCompanyEnabled(customerId, enabled){
+  if(!state.isAdmin){ showToast('Solo un administrador puede hacer esto.'); return; }
+  const snap = await fsGetDoc(fsDoc(db, 'customers', customerId));
+  if(!snap.exists()) return;
+  let cust = { id: customerId, ...snap.data() };
+  cust.companyEnabled = enabled;
+  await saveCustomer(cust);
+  await loadAllCustomers();
+  showToast(enabled ? 'Beneficio habilitado para ' + cust.name : 'Beneficio deshabilitado para ' + cust.name);
+  render();
+}
+
+async function removeClientCompany(customerId){
+  if(!state.isAdmin){ showToast('Solo un administrador puede quitar esto.'); return; }
+  const snap = await fsGetDoc(fsDoc(db, 'customers', customerId));
+  if(!snap.exists()) return;
+  let cust = { id: customerId, ...snap.data() };
+  cust.companyStatus = null;
+  cust.companyCode = '';
+  cust.companyEnabled = null;
+  await saveCustomer(cust);
+  await loadAllCustomers();
+  showToast(cust.name + ' fue desvinculado de la empresa');
+  render();
+}
+
+async function addClientToCompany(companyId, customerId){
+  if(!state.isAdmin){ showToast('Solo un administrador puede vincular clientes.'); return; }
+  const snap = await fsGetDoc(fsDoc(db, 'customers', customerId));
+  if(!snap.exists()) return;
+  let cust = { id: customerId, ...snap.data() };
+  cust.companyCode = companyId;
+  cust.companyStatus = 'approved';
+  cust.companyEnabled = true;
+  await saveCustomer(cust);
+  await loadAllCustomers();
+  state.addCompanyClientSearch = '';
+  showToast(cust.name + ' vinculado a la empresa');
+  render();
+}
+
+function toggleAdminEdit(id){
+  state.adminEditingId = id;
+  if(id){
+    const c = state.allCustomers.find(x => x.id === id);
+    state.adminEditPhone = c ? (c.phone || '') : '';
+    state.adminEditEmail = c ? (c.email || '') : '';
+    const parts = splitBirthday(c ? c.birthday : '');
+    state.adminEditBirthDay = parts.day;
+    state.adminEditBirthMonth = parts.month;
+    state.adminEditBirthYear = parts.year;
+    state.adminEditNote = c ? (c.internalNote || '') : '';
+  }
+  render();
+}
+
+async function saveAdminEdit(id){
+  if(!state.isAdmin){ showToast('Solo un administrador puede editar estos datos.'); return; }
+  const phone = (state.adminEditPhone||'').trim();
+  const email = (state.adminEditEmail||'').trim().toLowerCase();
+
+  try{
+    if(phone){
+      const q = fsQuery(fsCollection(db,'customers'), fsWhere('phone','==',phone));
+      const snap = await fsGetDocs(q);
+      if(snap.docs.some(d => d.id !== id)){ showToast('Ese teléfono ya lo usa otro cliente'); return; }
+    }
+    if(email){
+      const q2 = fsQuery(fsCollection(db,'customers'), fsWhere('email','==',email));
+      const snap2 = await fsGetDocs(q2);
+      if(snap2.docs.some(d => d.id !== id)){ showToast('Ese email ya lo usa otro cliente'); return; }
+    }
+  }catch(e){
+    console.error(e);
+    showToast('No se pudo validar los datos, probá de nuevo.');
+    return;
+  }
+
+  const snap = await fsGetDoc(fsDoc(db, 'customers', id));
+  if(!snap.exists()) return;
+  let cust = { id, ...snap.data() };
+  cust.phone = phone;
+  cust.email = email;
+
+  const bd = state.adminEditBirthDay, bm = state.adminEditBirthMonth, by = state.adminEditBirthYear;
+  cust.birthday = (bd && bm && by) ? (by + '-' + String(bm).padStart(2,'0') + '-' + String(bd).padStart(2,'0')) : '';
+  cust.internalNote = (state.adminEditNote||'').trim();
+
+  await saveCustomer(cust);
+  await loadAllCustomers();
+  state.adminEditingId = null;
+  showToast('Datos actualizados');
+  render();
+}
+
+async function toggleDisabled(id){
+  if(!state.isAdmin){ showToast('Solo un administrador puede habilitar/deshabilitar clientes.'); return; }
+  const snap = await fsGetDoc(fsDoc(db, 'customers', id));
+  if(!snap.exists()) return;
+  let cust = { id, ...snap.data() };
+  cust.disabled = !cust.disabled;
+  await saveCustomer(cust);
+  await loadAllCustomers();
+  showToast(cust.disabled ? 'Cliente deshabilitado' : 'Cliente habilitado nuevamente');
+  render();
+}
+
+function selectCustomer(id){
+  state.selectedCustomerId = state.selectedCustomerId === id ? null : id;
+  state.receiptValue = '';
+  state.receiptWarning = '';
+  state.productsValue = '';
+  state.receiptCompanyDiscount = false;
+  state.amountValue = '';
+  render();
+}
+
+function togglePromo(id){
+  if(state.promoSelected.has(id)) state.promoSelected.delete(id);
+  else state.promoSelected.add(id);
+}
+
+function selectByTaste(){
+  const q = (state.tasteFilter||'').trim().toLowerCase();
+  if(!q){ showToast('Escribí un producto o gusto para buscar'); return; }
+  let matches = 0;
+  state.allCustomers.forEach(c=>{
+    const profile = c.tasteProfile || {};
+    const hit = Object.keys(profile).some(p => p.toLowerCase().includes(q));
+    if(hit){ state.promoSelected.add(c.id); matches++; }
+  });
+  showToast(matches > 0 ? matches+' cliente'+(matches>1?'s':'')+' seleccionado'+(matches>1?'s':'')+' por gusto' : 'Nadie registrado con ese gusto todavía');
+  render();
+}
+
+function sendPromo(){
+  const text = document.getElementById('promo-text').value;
+  const n = state.promoSelected.size;
+  if(n === 0){ showToast('Elegí al menos un cliente'); return; }
+  showToast('Promoción enviada a '+n+' cliente'+(n>1?'s':''));
+  state.promoSelected.clear();
+}
+
+async function handleRegister(){
+  const name = document.getElementById('reg-name').value.trim();
+  const phone = document.getElementById('reg-phone').value.trim();
+  const email = document.getElementById('reg-email').value.trim().toLowerCase();
+  const bDay = document.getElementById('reg-bday-day').value;
+  const bMonth = document.getElementById('reg-bday-month').value;
+  const bYear = document.getElementById('reg-bday-year').value;
+  const birthday = (bDay && bMonth && bYear) ? (bYear + '-' + String(bMonth).padStart(2,'0') + '-' + String(bDay).padStart(2,'0')) : '';
+  const consent = document.getElementById('reg-consent').checked;
+  if(!name){ showToast('Ingresá tu nombre'); return; }
+  if(!consent){ showToast('Necesitamos tu autorización para continuar'); return; }
+
+  try{
+    if(phone){
+      const q = fsQuery(fsCollection(db, 'customers'), fsWhere('phone', '==', phone));
+      const snap = await fsGetDocs(q);
+      if(!snap.empty){ showToast('Ese teléfono ya está registrado en el club.'); return; }
+    }
+    if(email){
+      const q2 = fsQuery(fsCollection(db, 'customers'), fsWhere('email', '==', email));
+      const snap2 = await fsGetDocs(q2);
+      if(!snap2.empty){ showToast('Ese email ya está registrado en el club.'); return; }
+    }
+  }catch(e){
+    console.error(e);
+    showToast('No se pudo validar los datos, probá de nuevo.');
+    return;
+  }
+
+  await registerCustomer(name, phone, email, birthday);
+}
+
+async function resetMe(){
+  localStorage.removeItem('norai-my-id');
+  state.me = null;
+  state.screen = 'register';
+  render();
+}
+
+document.addEventListener('click', function(e){
+  if(!state.selectedCustomerId && !state.adminEditingId && !state.previewCustomerId) return;
+  if(e.target.closest('.customer-block')) return;
+  state.selectedCustomerId = null;
+  state.adminEditingId = null;
+  state.previewCustomerId = null;
+  render();
+});
+
+(async function start(){
+  const ok = await initFirebase();
+  if(ok) loadMe();
+})();
+</script>
+</body>
+</html>

@@ -66,13 +66,32 @@ exports.handler = async (event) => {
 
   // Tomamos la venta original (no NC) para extraer los productos y el monto.
   const sale = matches.find(s => s.fiscalType !== 'NC') || matches[0];
-  const products = (sale.products || []).map(p => `${p.name}${p.quantity > 1 ? ' x' + p.quantity : ''}`);
+  const rawProducts = sale.products || [];
+
+  const products = rawProducts.map(p => `${p.name}${p.quantity > 1 ? ' x' + p.quantity : ''}`);
+  const productDetails = rawProducts.map(p => ({
+    name: p.name,
+    quantity: p.quantity,
+    amount: p.payed,
+    category: p.hierarchyName || null,
+  }));
+
+  // Si hay varios cafés en la misma boleta, nos quedamos con el de mayor valor
+  // como "el café" representativo de esta visita.
+  const COFFEE_KEYWORDS = ['cafe', 'café', 'latte', 'capuccino', 'cappuccino', 'espresso', 'expreso', 'americano', 'macchiato', 'mocha', 'moka', 'flat white', 'cortado', 'cold brew'];
+  const coffeeItems = rawProducts.filter(p => COFFEE_KEYWORDS.some(k => (p.name || '').toLowerCase().includes(k)));
+  const mainCoffeeSource = coffeeItems.length > 0 ? coffeeItems : rawProducts;
+  const mainCoffee = mainCoffeeSource.length > 0
+    ? mainCoffeeSource.reduce((max, p) => (p.payed > (max ? max.payed : -1) ? p : max), null)
+    : null;
 
   return jsonResponse(200, {
     ok: true,
     receipt,
     amount: sale.payed,
     products,
+    productDetails,
+    mainCoffee: mainCoffee ? { name: mainCoffee.name, amount: mainCoffee.payed } : null,
     fiscalType: sale.fiscalType,
     dateClosed: sale.dateClosed,
   });

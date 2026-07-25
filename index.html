@@ -560,11 +560,11 @@ async function sendRecoveryCodeEmail(email, code, name){
 }
 
 async function handleRecover(){
-  const phoneInput = document.getElementById('recover-phone');
-  const phone = (phoneInput ? phoneInput.value : '').trim();
+  const emailInput = document.getElementById('recover-email');
+  const email = (emailInput ? emailInput.value : '').trim().toLowerCase();
 
-  if(!phone || phone === '+569 '){
-    state.recoverWarning = 'Ingresá el teléfono con el que te registraste.';
+  if(!email){
+    state.recoverWarning = 'Ingresá el correo con el que te registraste.';
     render();
     return;
   }
@@ -574,24 +574,18 @@ async function handleRecover(){
   render();
 
   try{
-    const q = fsQuery(fsCollection(db, 'customers'), fsWhere('phone', '==', phone));
+    const q = fsQuery(fsCollection(db, 'customers'), fsWhere('email', '==', email));
     const snap = await fsGetDocs(q);
     state.recovering = false;
 
     if(snap.empty){
-      state.recoverWarning = 'No encontramos ninguna tarjeta con ese teléfono. Fijate que esté bien escrito, o registrate como cliente nuevo.';
+      state.recoverWarning = 'No encontramos ninguna tarjeta con ese correo. Fijate que esté bien escrito, o registrate como cliente nuevo.';
       render();
       return;
     }
 
     const docSnap = snap.docs[0];
     const cust = { id: docSnap.id, ...docSnap.data() };
-
-    if(!cust.email){
-      state.recoverWarning = 'Esta tarjeta no tiene un correo registrado para poder verificar tu identidad. Pedile ayuda al local para recuperarla en caja.';
-      render();
-      return;
-    }
 
     state.recoverPendingCustomer = cust;
     await requestNewRecoveryCode();
@@ -1180,8 +1174,8 @@ function render(){
         html += '<p class="note" style="text-align:center;"><a href="javascript:void(0)" onclick="cancelRecoveryCode()" style="color:var(--muted-on-dark); text-decoration:underline;">Usar otro teléfono</a></p>';
       } else {
         html += '<h1 class="hero">Recuperar mi tarjeta</h1>';
-        html += '<p class="sub">Ingresá el teléfono con el que te registraste. Te vamos a mandar un código a tu correo para confirmar que sos vos antes de mostrarte la tarjeta.</p>';
-        html += '<div class="field"><label>Teléfono</label><input id="recover-phone" placeholder="+569 1234 5678" value="+569 "></div>';
+        html += '<p class="sub">Ingresá el correo con el que te registraste. Te vamos a mandar un código ahí mismo para confirmar que sos vos antes de mostrarte la tarjeta.</p>';
+        html += '<div class="field"><label>Correo</label><input id="recover-email" type="email" placeholder="tu@email.com"></div>';
         if(state.recoverWarning){
           html += '<div class="warn-text">'+state.recoverWarning+'</div>';
         }

@@ -366,6 +366,9 @@ let state = {
   receiptValue: '',
   receiptWarning: '',
   receiptCompanyDiscount: false,
+  lookingUpReceipt: false,
+  lastProductDetails: null,
+  lastMainCoffee: null,
   amountValue: '',
   showReportModal: false,
   reportFilterMode: 'month',
@@ -518,6 +521,43 @@ async function registerCustomer(name, phone, email, birthday){
   render();
 }
 
+async function submitReceipt(customerId){
+  const receipt = (state.receiptValue||'').trim();
+  if(!receipt){
+    state.receiptWarning = 'Ingresá el N° de boleta para poder sumar el sello.';
+    render();
+    return;
+  }
+  state.receiptWarning = '';
+  state.lookingUpReceipt = true;
+  render();
+
+  try{
+    const res = await fetch('/.netlify/functions/lookup-receipt?receipt=' + encodeURIComponent(receipt));
+    const data = await res.json();
+    state.lookingUpReceipt = false;
+
+    if(!data.ok){
+      state.receiptWarning = data.error || 'No se pudo validar esa boleta.';
+      render();
+      return;
+    }
+
+    state.productsValue = (data.products || []).join(', ');
+    state.amountValue = data.amount != null ? String(data.amount) : '';
+    state.lastProductDetails = data.productDetails || null;
+    state.lastMainCoffee = data.mainCoffee || null;
+  }catch(e){
+    console.error(e);
+    state.lookingUpReceipt = false;
+    state.receiptWarning = 'No se pudo conectar con la validación de boletas. Probá de nuevo.';
+    render();
+    return;
+  }
+
+  await addStamp(customerId);
+}
+
 async function addStamp(customerId){
   const receipt = (state.receiptValue||'').trim();
   if(!receipt){
@@ -566,26 +606,29 @@ async function addStamp(customerId){
 
   let justCompleted = false;
   if(hasCompanyDiscount){
-    cust.history.unshift({ receipt, ts: Date.now(), products, amount, companyDiscount: true, companyName, companyDiscountLabel });
+    cust.history.unshift({ receipt, ts: Date.now(), products, amount, productDetails: state.lastProductDetails || null, mainCoffee: state.lastMainCoffee || null, companyDiscount: true, companyName, companyDiscountLabel });
   } else {
     cust.stamps += 1;
     justCompleted = cust.stamps >= STAMPS_GOAL;
-    cust.history.unshift({ receipt, ts: Date.now(), products, amount });
+    cust.history.unshift({ receipt, ts: Date.now(), products, amount, productDetails: state.lastProductDetails || null, mainCoffee: state.lastMainCoffee || null });
   }
   cust.history = cust.history.slice(0, 500);
   products.forEach(p=>{ cust.tasteProfile[p] = (cust.tasteProfile[p]||0) + 1; });
 
   await saveCustomer(cust);
   await loadAllCustomers();
+  const coffeeLabel = state.lastMainCoffee ? ' — ' + state.lastMainCoffee.name + ' $' + state.lastMainCoffee.amount : '';
   state.receiptValue = '';
   state.productsValue = '';
   state.receiptWarning = '';
   state.receiptCompanyDiscount = false;
   state.amountValue = '';
+  state.lastProductDetails = null;
+  state.lastMainCoffee = null;
   if(hasCompanyDiscount){
     showToast('Boleta registrada con descuento de empresa para ' + cust.name + ' — no suma sello.');
   } else {
-    showToast(justCompleted ? '¡'+cust.name+' completó sus '+STAMPS_GOAL+' sellos! Confirmá el canje cuando le entregues el café.' : 'Sello agregado a ' + cust.name + ' (boleta N° ' + receipt + ')');
+    showToast(justCompleted ? '¡'+cust.name+' completó sus '+STAMPS_GOAL+' sellos! Confirmá el canje cuando le entregues el café.' : 'Sello agregado a ' + cust.name + coffeeLabel + ' (boleta N° ' + receipt + ')');
   }
   if(state.me && state.me.id === customerId){ state.me = cust; }
   render();
@@ -1011,10 +1054,7 @@ function render(){
 
             html += '<div class="field" style="margin-bottom:8px;"><label>N° de boleta</label>'
               + '<input id="receipt-input" placeholder="Ej: 004582" value="'+(state.receiptValue||'').replace(/"/g,'&quot;')+'" oninput="state.receiptValue=this.value; state.receiptWarning=\'\';"></div>';
-            html += '<div class="field" style="margin-bottom:8px;"><label>Productos de esta compra</label>'
-              + '<input id="products-input" placeholder="Ej: Cappuccino, Croissant" value="'+(state.productsValue||'').replace(/"/g,'&quot;')+'" oninput="state.productsValue=this.value;"></div>';
-            html += '<div class="field" style="margin-bottom:8px;"><label>Monto ($)</label>'
-              + '<input id="amount-input" type="number" inputmode="decimal" placeholder="Ej: 4500" value="'+(state.amountValue||'').toString().replace(/"/g,'&quot;')+'" oninput="state.amountValue=this.value;"></div>';
+            html += '<p class="note" style="margin-top:0; margin-bottom:10px;">Al sumar, la app le pregunta a Toteat qué café(s) compró, el monto y valida que esa boleta esté pagada y sin nota de crédito — no hace falta tipear productos ni monto a mano.</p>';
             if(activeCompanyBenefit){
               html += '<div class="checkbox-row" style="margin-bottom:6px; align-items:flex-start;">'
                 + '<input type="checkbox" checked disabled style="margin-top:2px;">'
@@ -1028,7 +1068,7 @@ function render(){
             if(state.receiptWarning){
               html += '<div class="warn-text">'+state.receiptWarning+'</div>';
             }
-            html += '<div class="action-row"><button class="btn" onclick="addStamp(\''+c.id+'\')">Sumar sello</button></div>';
+            html += '<div class="action-row"><button class="btn" onclick="submitReceipt(\''+c.id+'\')">'+(state.lookingUpReceipt ? 'Buscando en Toteat...' : 'Buscar boleta y sumar sello')+'</button></div>';
           }
 
           const hist = c.history || [];
@@ -1043,6 +1083,13 @@ function render(){
                 html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--mustard-deep);">🎉 Canje gratis</b></div>';
               } else {
                 html += '<div class="history-item"><span>'+when+(h.products && h.products.length ? ' · '+h.products.join(', ') : '')+(h.amount != null ? ' · $'+h.amount : '')+(h.companyDiscount ? ' · 🏢 con descuento (no sumó sello)' : '')+'</span><b>N° '+h.receipt+'</b></div>';
+                if(h.productDetails && h.productDetails.length){
+                  html += '<div style="padding:2px 0 8px 8px; font-size:0.7rem; color:var(--muted);">';
+                  h.productDetails.forEach(p=>{
+                    html += '<div>'+p.name+(p.quantity>1?' x'+p.quantity:'')+' — $'+p.amount+(h.mainCoffee && h.mainCoffee.name===p.name ? ' ☕' : '')+'</div>';
+                  });
+                  html += '</div>';
+                }
               }
             });
           }

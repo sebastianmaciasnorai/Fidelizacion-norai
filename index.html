@@ -905,13 +905,20 @@ function render(){
     return;
   }
 
+  const staffDevice = isStaffDevice();
+  if(!staffDevice && state.mode !== 'customer'){ state.mode = 'customer'; }
+
   html += '<div class="topnav"><div class="brand">'+markSVG(26,'#F2EEE3')
     + '<div><div class="word">NOR\u0100I</div><div class="tag">Café Club</div></div></div>';
-  html += '<div class="mode-toggle">'
-    + '<button onclick="switchMode(\'customer\')" class="'+(state.mode==='customer'?'active':'')+'">Cliente</button>'
-    + '<button onclick="switchMode(\'staff\')" class="'+(state.mode==='staff'?'active':'')+'">Personal</button>'
-    + '<button onclick="switchMode(\'preview\')" class="'+(state.mode==='preview'?'active':'')+'">Tarjetas</button>'
-    + '</div></div>';
+  if(staffDevice){
+    html += '<div class="mode-toggle">'
+      + '<button onclick="switchMode(\'customer\')" class="'+(state.mode==='customer'?'active':'')+'">Cliente</button>'
+      + '<button onclick="switchMode(\'staff\')" class="'+(state.mode==='staff'?'active':'')+'">Personal</button>'
+      + '<button onclick="switchMode(\'preview\')" class="'+(state.mode==='preview'?'active':'')+'">Tarjetas</button>'
+      + '</div></div>';
+  } else {
+    html += '</div>';
+  }
 
   html += '<main>';
 
@@ -1797,6 +1804,18 @@ document.addEventListener('click', function(e){
   state.previewCustomerId = null;
   render();
 });
+
+function isStaffDevice(){
+  try{
+    const params = new URLSearchParams(window.location.search);
+    if(params.get('staff') === 'norai2024'){
+      localStorage.setItem('norai-staff-device', '1');
+    }
+    return localStorage.getItem('norai-staff-device') === '1';
+  }catch(e){
+    return false;
+  }
+}
 
 (async function start(){
   const ok = await initFirebase();

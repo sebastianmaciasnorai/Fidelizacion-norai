@@ -377,6 +377,13 @@ let state = {
   screen: 'loading', // loading | register | recover | card
   recoverWarning: '',
   recovering: false,
+  recoverStep: 'phone', // 'phone' | 'code'
+  recoverPendingCustomer: null,
+  recoverCodeInput: '',
+  recoverCodeWarning: '',
+  sendingCode: false,
+  verifyingCode: false,
+  resendCooldown: 0,
   me: null, // {id, name, phone, email, stamps, redeemed}
   allCustomers: [],
   selectedCustomerId: null,
@@ -531,6 +538,27 @@ function showToast(msg){
   setTimeout(()=>{ state.toast = null; }, 2500);
 }
 
+function maskEmail(email){
+  if(!email || email.indexOf('@') === -1) return '';
+  const [user, domain] = email.split('@');
+  const shown = user.slice(0, Math.min(2, user.length));
+  return shown + '***@' + domain;
+}
+
+function generateSixDigitCode(){
+  return String(Math.floor(100000 + Math.random()*900000));
+}
+
+async function sendRecoveryCodeEmail(email, code, name){
+  const res = await fetch('/.netlify/functions/send-recovery-code', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, code, name })
+  });
+  const data = await res.json();
+  if(!data.ok) throw new Error(data.error || 'No se pudo enviar el correo');
+}
+
 async function handleRecover(){
   const phoneInput = document.getElementById('recover-phone');
   const phone = (phoneInput ? phoneInput.value : '').trim();
@@ -558,23 +586,130 @@ async function handleRecover(){
 
     const docSnap = snap.docs[0];
     const cust = { id: docSnap.id, ...docSnap.data() };
-    if(cust.companyStatus === 'approved' && cust.companyCode){
-      try{
-        const coSnap = await fsGetDoc(fsDoc(db, 'companies', cust.companyCode));
-        cust.company = coSnap.exists() ? { id: coSnap.id, ...coSnap.data() } : null;
-      }catch(e){ /* ignore */ }
+
+    if(!cust.email){
+      state.recoverWarning = 'Esta tarjeta no tiene un correo registrado para poder verificar tu identidad. Pedile ayuda al local para recuperarla en caja.';
+      render();
+      return;
     }
 
-    localStorage.setItem('norai-my-id', cust.id);
-    state.me = cust;
-    state.screen = 'card';
-    render();
+    state.recoverPendingCustomer = cust;
+    await requestNewRecoveryCode();
   }catch(e){
     console.error(e);
     state.recovering = false;
     state.recoverWarning = 'No se pudo conectar para buscar tu tarjeta. Probá de nuevo.';
     render();
   }
+}
+
+async function requestNewRecoveryCode(){
+  const cust = state.recoverPendingCustomer;
+  if(!cust) return;
+  state.sendingCode = true;
+  state.recoverCodeWarning = '';
+  render();
+
+  try{
+    const code = generateSixDigitCode();
+    const expiresAt = Date.now() + 10*60*1000; // 10 minutos
+    await fsSetDoc(fsDoc(db, 'customers', cust.id), { recoveryCode: { code, expiresAt, attempts: 0 } }, { merge: true });
+    await sendRecoveryCodeEmail(cust.email, code, cust.name);
+    state.sendingCode = false;
+    state.recoverStep = 'code';
+    state.recoverCodeInput = '';
+    state.resendCooldown = 30;
+    const tick = setInterval(()=>{
+      state.resendCooldown = Math.max(0, state.resendCooldown - 1);
+      if(state.resendCooldown === 0) clearInterval(tick);
+      render();
+    }, 1000);
+    render();
+  }catch(e){
+    console.error(e);
+    state.sendingCode = false;
+    state.recoverWarning = 'No pudimos enviar el código a tu correo. Probá de nuevo en unos segundos.';
+    state.recoverStep = 'phone';
+    render();
+  }
+}
+
+async function verifyRecoveryCode(){
+  const cust = state.recoverPendingCustomer;
+  if(!cust) return;
+  const input = (state.recoverCodeInput||'').trim();
+  if(!input){
+    state.recoverCodeWarning = 'Ingresá el código de 6 dígitos que te enviamos por correo.';
+    render();
+    return;
+  }
+
+  state.verifyingCode = true;
+  state.recoverCodeWarning = '';
+  render();
+
+  try{
+    const snap = await fsGetDoc(fsDoc(db, 'customers', cust.id));
+    if(!snap.exists()){
+      state.verifyingCode = false;
+      state.recoverCodeWarning = 'No pudimos validar el código. Probá de nuevo.';
+      render();
+      return;
+    }
+    const fresh = { id: cust.id, ...snap.data() };
+    const rc = fresh.recoveryCode;
+
+    if(!rc || Date.now() > rc.expiresAt){
+      state.verifyingCode = false;
+      state.recoverCodeWarning = 'Ese código venció. Pedí uno nuevo.';
+      render();
+      return;
+    }
+    if((rc.attempts||0) >= 5){
+      state.verifyingCode = false;
+      state.recoverCodeWarning = 'Demasiados intentos. Pedí un código nuevo.';
+      render();
+      return;
+    }
+    if(input !== rc.code){
+      await fsSetDoc(fsDoc(db, 'customers', cust.id), { recoveryCode: { ...rc, attempts: (rc.attempts||0) + 1 } }, { merge: true });
+      state.verifyingCode = false;
+      state.recoverCodeWarning = 'Código incorrecto. Te quedan ' + (4 - (rc.attempts||0)) + ' intento(s).';
+      render();
+      return;
+    }
+
+    // Código correcto: limpiamos el código usado y entramos
+    await fsSetDoc(fsDoc(db, 'customers', cust.id), { recoveryCode: null }, { merge: true });
+    if(fresh.companyStatus === 'approved' && fresh.companyCode){
+      try{
+        const coSnap = await fsGetDoc(fsDoc(db, 'companies', fresh.companyCode));
+        fresh.company = coSnap.exists() ? { id: coSnap.id, ...coSnap.data() } : null;
+      }catch(e){ /* ignore */ }
+    }
+
+    localStorage.setItem('norai-my-id', fresh.id);
+    state.me = fresh;
+    state.screen = 'card';
+    state.recoverStep = 'phone';
+    state.recoverPendingCustomer = null;
+    state.recoverCodeInput = '';
+    state.verifyingCode = false;
+    render();
+  }catch(e){
+    console.error(e);
+    state.verifyingCode = false;
+    state.recoverCodeWarning = 'No se pudo conectar para validar el código. Probá de nuevo.';
+    render();
+  }
+}
+
+function cancelRecoveryCode(){
+  state.recoverStep = 'phone';
+  state.recoverPendingCustomer = null;
+  state.recoverCodeInput = '';
+  state.recoverCodeWarning = '';
+  render();
 }
 
 async function registerCustomer(name, phone, email, birthday){
@@ -917,7 +1052,7 @@ function renderCustomerCard(cust, isOwn){
 
   const clientHist = (cust.history || []).slice().sort((a,b)=>b.ts-a.ts);
   html += '<div class="receipt-box" style="margin-top:16px;">';
-  html += '<div class="section-label" style="margin-top:0;">'+(isOwn ? 'Tus sellos' : 'Sellos de '+cust.name)+'</div>';
+  html += '<div class="section-label" style="margin-top:0;">'+(isOwn ? 'Tus últimos 5 sellos' : 'Últimos 5 sellos de '+cust.name)+'</div>';
   if(clientHist.length === 0){
     html += '<div class="history-empty">Todavía no '+(isOwn ? 'tenés' : 'tiene')+' sellos registrados'+(isOwn ? '. Pedí que te lo sumen en caja al retirar tu café.' : '.')+'</div>';
   } else {
@@ -1025,14 +1160,34 @@ function render(){
       html += '<button class="btn" onclick="handleRegister()">Crear mi tarjeta</button>';
       html += '<p class="note" style="text-align:center; margin-top:14px;"><a href="javascript:void(0)" onclick="state.screen=\'recover\'; state.recoverWarning=\'\'; render();" style="color:var(--mustard); text-decoration:underline;">¿Ya tenés una tarjeta? Recuperala acá</a></p>';
     } else if(state.screen === 'recover'){
-      html += '<h1 class="hero">Recuperar mi tarjeta</h1>';
-      html += '<p class="sub">Ingresá el teléfono con el que te registraste y te devolvemos tu tarjeta con tus sellos, tal como estaba.</p>';
-      html += '<div class="field"><label>Teléfono</label><input id="recover-phone" placeholder="+569 1234 5678" value="+569 "></div>';
-      if(state.recoverWarning){
-        html += '<div class="warn-text">'+state.recoverWarning+'</div>';
+      if(state.recoverStep === 'code' && state.recoverPendingCustomer){
+        const maskedEmail = maskEmail(state.recoverPendingCustomer.email);
+        html += '<h1 class="hero">Revisá tu correo</h1>';
+        html += '<p class="sub">Te mandamos un código de 6 dígitos a <b>'+maskedEmail+'</b> para confirmar que sos vos. Vence en 10 minutos.</p>';
+        html += '<div class="field"><label>Código de verificación</label>'
+          + '<input id="recover-code" inputmode="numeric" maxlength="6" placeholder="123456" value="'+(state.recoverCodeInput||'').replace(/"/g,'&quot;')+'" oninput="state.recoverCodeInput=this.value; state.recoverCodeWarning=\'\';"></div>';
+        if(state.recoverCodeWarning){
+          html += '<div class="warn-text">'+state.recoverCodeWarning+'</div>';
+        }
+        html += '<button class="btn" onclick="verifyRecoveryCode()">'+(state.verifyingCode ? 'Verificando...' : 'Confirmar código')+'</button>';
+        html += '<p class="note" style="text-align:center; margin-top:14px;">';
+        if(state.resendCooldown > 0){
+          html += 'Podés pedir otro código en '+state.resendCooldown+'s';
+        } else {
+          html += '<a href="javascript:void(0)" onclick="requestNewRecoveryCode()" style="color:var(--mustard); text-decoration:underline;">'+(state.sendingCode ? 'Enviando...' : 'Reenviar código')+'</a>';
+        }
+        html += '</p>';
+        html += '<p class="note" style="text-align:center;"><a href="javascript:void(0)" onclick="cancelRecoveryCode()" style="color:var(--muted-on-dark); text-decoration:underline;">Usar otro teléfono</a></p>';
+      } else {
+        html += '<h1 class="hero">Recuperar mi tarjeta</h1>';
+        html += '<p class="sub">Ingresá el teléfono con el que te registraste. Te vamos a mandar un código a tu correo para confirmar que sos vos antes de mostrarte la tarjeta.</p>';
+        html += '<div class="field"><label>Teléfono</label><input id="recover-phone" placeholder="+569 1234 5678" value="+569 "></div>';
+        if(state.recoverWarning){
+          html += '<div class="warn-text">'+state.recoverWarning+'</div>';
+        }
+        html += '<button class="btn" onclick="handleRecover()">'+((state.recovering||state.sendingCode) ? 'Enviando código...' : 'Buscar mi tarjeta')+'</button>';
+        html += '<p class="note" style="text-align:center; margin-top:14px;"><a href="javascript:void(0)" onclick="state.screen=\'register\'; state.recoverWarning=\'\'; render();" style="color:var(--mustard); text-decoration:underline;">Volver a registrarme</a></p>';
       }
-      html += '<button class="btn" onclick="handleRecover()">'+(state.recovering ? 'Buscando...' : 'Buscar mi tarjeta')+'</button>';
-      html += '<p class="note" style="text-align:center; margin-top:14px;"><a href="javascript:void(0)" onclick="state.screen=\'register\'; state.recoverWarning=\'\'; render();" style="color:var(--mustard); text-decoration:underline;">Volver a registrarme</a></p>';
     } else if(state.screen === 'card'){
       html += renderCustomerCard(state.me, true);
     }

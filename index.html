@@ -581,6 +581,18 @@ async function registerCustomer(name, phone, email, birthday){
   render();
 }
 
+async function forceStamp(customerId){
+  // TEMPORAL: solo para pruebas mientras no tenemos boletas reales en Toteat.
+  // Saca este botón (y esta función) cuando ya no lo necesitemos.
+  state.receiptValue = 'PRUEBA-' + Date.now();
+  state.productsValue = 'Sello manual (prueba)';
+  state.amountValue = '';
+  state.lastProductDetails = null;
+  state.lastMainCoffee = null;
+  state.receiptWarning = '';
+  await addStamp(customerId);
+}
+
 async function submitReceipt(customerId){
   const receipt = (state.receiptValue||'').trim();
   if(!receipt){
@@ -1191,6 +1203,7 @@ function render(){
               html += '<div class="warn-text">'+state.receiptWarning+'</div>';
             }
             html += '<div class="action-row"><button class="btn" onclick="submitReceipt(\''+c.id+'\')">'+(state.lookingUpReceipt ? 'Buscando en Toteat...' : 'Buscar boleta y sumar sello')+'</button></div>';
+            html += '<div class="action-row"><button class="btn" style="background:transparent; border:1.5px dashed var(--muted); color:var(--muted);" onclick="forceStamp(\''+c.id+'\')">⚠️ Forzar sello (prueba, sin Toteat)</button></div>';
           }
 
           const hist = c.history || [];

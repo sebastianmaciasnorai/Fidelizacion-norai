@@ -166,6 +166,18 @@
   .review-stars{ display:flex; gap:1px; flex-shrink:0; }
   .review-stars svg{ width:10px; height:10px; fill:#F4B400; }
 
+  .ios-tip{ margin-top:10px; text-align:right; }
+  .ios-tip summary{
+    display:inline-block; list-style:none; cursor:pointer;
+    font-family:'Work Sans'; font-size:0.68rem; color:var(--muted);
+    opacity:0.75; text-decoration:underline; text-decoration-style:dotted;
+  }
+  .ios-tip summary::-webkit-details-marker{ display:none; }
+  .ios-tip-body{
+    margin-top:6px; text-align:left; font-size:0.72rem; color:var(--muted);
+    line-height:1.5; background:rgba(0,0,0,0.12); border-radius:8px; padding:8px 10px;
+  }
+
   .section-label{
     font-size:0.68rem; text-transform:uppercase; letter-spacing:0.1em; color:var(--muted-on-dark);
     margin: 26px 0 10px; display:flex; align-items:center; gap:8px;
@@ -812,6 +824,11 @@ function isIOSDevice(){
   return isIPhoneOrIPad || isTouchMac;
 }
 
+function isStandaloneApp(){
+  return window.navigator.standalone === true
+    || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches);
+}
+
 async function saveToGoogleWallet(customerId, name, stamps){
   showToast('Preparando tu tarjeta de Google Wallet...');
   try{
@@ -862,11 +879,12 @@ function renderCustomerCard(cust, isOwn){
     const star = '<svg viewBox="0 0 24 24"><path d="M12 2l2.9 6.26L22 9.27l-5 4.87L18.18 21 12 17.27 5.82 21 7 14.14l-5-4.87 7.1-1.01L12 2z"/></svg>';
     const googleWord = '<span class="google-wordmark-inline"><span style="color:#4285F4;">G</span><span style="color:#EA4335;">o</span><span style="color:#FBBC05;">o</span><span style="color:#4285F4;">g</span><span style="color:#34A853;">l</span><span style="color:#EA4335;">e</span></span>';
     if(isIOSDevice()){
-      html += '<div class="free-banner" style="text-align:left;">'
-        + '📲 <b>¿Querés acceso rápido a tu tarjeta?</b><br>'
-        + 'Tocá el ícono de compartir <span style="font-size:1.1em;">⬆️</span> de Safari y elegí <b>"Agregar a pantalla de inicio"</b>. '
-        + 'Te va a quedar un ícono como si fuera una app, para no tener que buscar el link cada vez.'
-        + '</div>';
+      if(!isStandaloneApp()){
+        html += '<details class="ios-tip">'
+          + '<summary>📲 Acceso rápido a tu tarjeta</summary>'
+          + '<div class="ios-tip-body">Tocá el ícono de compartir <span style="font-size:1.1em;">⬆️</span> de Safari y elegí <b>"Agregar a pantalla de inicio"</b>. Te va a quedar un ícono como si fuera una app.</div>'
+          + '</details>';
+      }
     } else {
       html += '<button type="button" class="review-btn" style="width:100%; border:none; cursor:pointer; margin-bottom:8px;" onclick="saveToGoogleWallet(\''+cust.id+'\',\''+cust.name.replace(/'/g,"\\'")+'\','+cust.stamps+')">'
         + '<div class="review-btn-text">🔖 Guardar en Google Wallet</div>'

@@ -318,7 +318,7 @@ const firebaseConfig = {
    }
 */
 
-let db, fsDoc, fsGetDoc, fsSetDoc, fsGetDocs, fsCollection, fsQuery, fsWhere;
+let db, fsDoc, fsGetDoc, fsSetDoc, fsGetDocs, fsCollection, fsQuery, fsWhere, fsDeleteDoc;
 let auth, authSignInEmail, authSignInGoogle, authSignOut, GoogleProvider;
 
 async function initFirebase(){
@@ -333,7 +333,7 @@ async function initFirebase(){
     const authMod = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
     const app = initializeApp(firebaseConfig);
     db = fs.getFirestore(app);
-    fsDoc = fs.doc; fsGetDoc = fs.getDoc; fsSetDoc = fs.setDoc;
+    fsDoc = fs.doc; fsGetDoc = fs.getDoc; fsSetDoc = fs.setDoc; fsDeleteDoc = fs.deleteDoc;
     fsGetDocs = fs.getDocs; fsCollection = fs.collection;
     fsQuery = fs.query; fsWhere = fs.where;
 
@@ -512,9 +512,30 @@ async function loadAllCustomers(){
   try{
     const snap = await fsGetDocs(fsCollection(db, 'customers'));
     state.allCustomers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    backfillCustomerIndexes(state.allCustomers); // no bloquea el render, corre en segundo plano
   }catch(e){
     console.error(e);
     state.allCustomers = [];
+  }
+}
+
+// Clientes registrados antes de que existiera phoneIndex/emailIndex no tienen esos
+// documentos todavía, así que no se podrían recuperar por correo. Como el admin sí
+// puede listar y escribir, aprovechamos cada carga del panel de Personal para
+// completar los índices que falten, en silencio.
+async function backfillCustomerIndexes(customers){
+  if(!state.isAdmin) return;
+  for(const c of customers){
+    try{
+      if(c.phone){
+        const s = await fsGetDoc(fsDoc(db, 'phoneIndex', c.phone));
+        if(!s.exists()) await fsSetDoc(fsDoc(db, 'phoneIndex', c.phone), { customerId: c.id });
+      }
+      if(c.email){
+        const s2 = await fsGetDoc(fsDoc(db, 'emailIndex', c.email));
+        if(!s2.exists()) await fsSetDoc(fsDoc(db, 'emailIndex', c.email), { customerId: c.id });
+      }
+    }catch(e){ console.error(e); }
   }
 }
 
@@ -580,18 +601,24 @@ async function handleRecover(){
   render();
 
   try{
-    const q = fsQuery(fsCollection(db, 'customers'), fsWhere('email', '==', email));
-    const snap = await fsGetDocs(q);
+    const idxSnap = await fsGetDoc(fsDoc(db, 'emailIndex', email));
     state.recovering = false;
 
-    if(snap.empty){
+    if(!idxSnap.exists()){
       state.recoverWarning = 'No encontramos ninguna tarjeta con ese correo. Fijate que esté bien escrito, o registrate como cliente nuevo.';
       render();
       return;
     }
 
-    const docSnap = snap.docs[0];
-    const cust = { id: docSnap.id, ...docSnap.data() };
+    const customerId = idxSnap.data().customerId;
+    const custSnap = await fsGetDoc(fsDoc(db, 'customers', customerId));
+    if(!custSnap.exists()){
+      state.recoverWarning = 'No encontramos ninguna tarjeta con ese correo. Fijate que esté bien escrito, o registrate como cliente nuevo.';
+      render();
+      return;
+    }
+
+    const cust = { id: custSnap.id, ...custSnap.data() };
 
     state.recoverPendingCustomer = cust;
     await requestNewRecoveryCode();
@@ -716,10 +743,13 @@ async function registerCustomer(name, phone, email, birthday){
   const id = await generateFriendlyId();
   const cust = { id, name, phone, email, birthday: birthday || '', stamps:0, redeemed:0, createdAt: Date.now(), history:[], tasteProfile:{} };
   await saveCustomer(cust);
+  if(phone){ try{ await fsSetDoc(fsDoc(db, 'phoneIndex', phone), { customerId: id }); }catch(e){ console.error(e); } }
+  if(email){ try{ await fsSetDoc(fsDoc(db, 'emailIndex', email), { customerId: id }); }catch(e){ console.error(e); } }
   localStorage.setItem('norai-my-id', id);
   state.me = cust;
   state.screen = 'card';
   render();
+  showToast('¡Listo! Tu tarjeta se creó correctamente 🎉');
 }
 
 async function forceStamp(customerId){
@@ -1290,6 +1320,7 @@ function render(){
           html += '<div class="mini-actions">'
             + '<button class="mini-btn" onclick="event.stopPropagation(); toggleAdminEdit(\''+c.id+'\')">Editar</button>'
             + '<button class="mini-btn '+(c.disabled?'':'danger')+'" onclick="event.stopPropagation(); toggleDisabled(\''+c.id+'\')">'+(c.disabled?'Habilitar':'Deshabilitar')+'</button>'
+            + '<button class="mini-btn danger" onclick="event.stopPropagation(); deleteCustomerAccount(\''+c.id+'\', \''+c.name.replace(/'/g,"\\'")+'\')">Borrar</button>'
             + '</div>';
         }
         html += '<div class="cstamps" onclick="selectCustomer(\''+c.id+'\')">'+Math.min(c.stamps, STAMPS_GOAL)+'/'+STAMPS_GOAL+((c.stamps>=STAMPS_GOAL && !c.disabled) ? '<div style="font-size:0.58rem; color:var(--mustard-deep); text-transform:uppercase; letter-spacing:0.02em; margin-top:2px;">🎉 Canjear</div>' : '')+'</div>';
@@ -1391,6 +1422,12 @@ function render(){
             });
           }
           html += '</div>';
+          html += '<div class="action-row">'
+            + '<button class="btn secondary" onclick="clearCustomerHistory(\''+c.id+'\', \''+c.name.replace(/'/g,"\\'")+'\')">🗑️ Borrar historial (reiniciar a 0)</button>'
+            + '</div>';
+          if(c.historyBackup){
+            html += '<div class="action-row"><button class="btn" style="background:transparent; border:1.5px dashed var(--mustard); color:var(--mustard-deep);" onclick="restoreCustomerHistory(\''+c.id+'\', \''+c.name.replace(/'/g,"\\'")+'\')">↩️ Restaurar historial anterior</button></div>';
+          }
           html += '</div>'; // end customer-expand
         }
 
@@ -1928,14 +1965,12 @@ async function saveAdminEdit(id){
 
   try{
     if(phone){
-      const q = fsQuery(fsCollection(db,'customers'), fsWhere('phone','==',phone));
-      const snap = await fsGetDocs(q);
-      if(snap.docs.some(d => d.id !== id)){ showToast('Ese teléfono ya lo usa otro cliente'); return; }
+      const phoneSnap = await fsGetDoc(fsDoc(db, 'phoneIndex', phone));
+      if(phoneSnap.exists() && phoneSnap.data().customerId !== id){ showToast('Ese teléfono ya lo usa otro cliente'); return; }
     }
     if(email){
-      const q2 = fsQuery(fsCollection(db,'customers'), fsWhere('email','==',email));
-      const snap2 = await fsGetDocs(q2);
-      if(snap2.docs.some(d => d.id !== id)){ showToast('Ese email ya lo usa otro cliente'); return; }
+      const emailSnap = await fsGetDoc(fsDoc(db, 'emailIndex', email));
+      if(emailSnap.exists() && emailSnap.data().customerId !== id){ showToast('Ese email ya lo usa otro cliente'); return; }
     }
   }catch(e){
     console.error(e);
@@ -1946,6 +1981,8 @@ async function saveAdminEdit(id){
   const snap = await fsGetDoc(fsDoc(db, 'customers', id));
   if(!snap.exists()) return;
   let cust = { id, ...snap.data() };
+  const oldPhone = cust.phone;
+  const oldEmail = cust.email;
   cust.phone = phone;
   cust.email = email;
 
@@ -1954,6 +1991,19 @@ async function saveAdminEdit(id){
   cust.internalNote = (state.adminEditNote||'').trim();
 
   await saveCustomer(cust);
+
+  // Mantenemos sincronizados los índices de búsqueda si cambió el teléfono/correo
+  try{
+    if(oldPhone !== phone){
+      if(oldPhone) await fsDeleteDoc(fsDoc(db, 'phoneIndex', oldPhone));
+      if(phone) await fsSetDoc(fsDoc(db, 'phoneIndex', phone), { customerId: id });
+    }
+    if(oldEmail !== email){
+      if(oldEmail) await fsDeleteDoc(fsDoc(db, 'emailIndex', oldEmail));
+      if(email) await fsSetDoc(fsDoc(db, 'emailIndex', email), { customerId: id });
+    }
+  }catch(e){ console.error(e); }
+
   await loadAllCustomers();
   state.adminEditingId = null;
   showToast('Datos actualizados');
@@ -1971,6 +2021,62 @@ async function toggleDisabled(id){
   showToast(cust.disabled ? 'Cliente deshabilitado' : 'Cliente habilitado nuevamente');
   render();
 }
+
+async function deleteCustomerAccount(id, name){
+  if(!state.isAdmin){ showToast('Solo un administrador puede borrar clientes.'); return; }
+  const sure = window.confirm('¿Borrar definitivamente la tarjeta de '+name+'? Esta acción no se puede deshacer.');
+  if(!sure) return;
+  try{
+    const snap = await fsGetDoc(fsDoc(db, 'customers', id));
+    if(snap.exists()){
+      const cust = snap.data();
+      if(cust.phone){ try{ await fsDeleteDoc(fsDoc(db, 'phoneIndex', cust.phone)); }catch(e){} }
+      if(cust.email){ try{ await fsDeleteDoc(fsDoc(db, 'emailIndex', cust.email)); }catch(e){} }
+    }
+    await fsDeleteDoc(fsDoc(db, 'customers', id));
+    await loadAllCustomers();
+    state.selectedCustomerId = null;
+    showToast('Tarjeta de '+name+' borrada definitivamente');
+    render();
+  }catch(e){
+    console.error(e);
+    showToast('No se pudo borrar. Probá de nuevo.');
+  }
+}
+
+async function clearCustomerHistory(id, name){
+  if(!state.isAdmin){ showToast('Solo un administrador puede borrar el historial.'); return; }
+  const sure = window.confirm('¿Borrar el historial y reiniciar los sellos de '+name+' a 0? Vas a poder restaurarlo después si te equivocaste.');
+  if(!sure) return;
+  const snap = await fsGetDoc(fsDoc(db, 'customers', id));
+  if(!snap.exists()) return;
+  let cust = { id, ...snap.data() };
+  // Guardamos un respaldo completo antes de borrar, por si hace falta restaurar
+  cust.historyBackup = { history: cust.history || [], stamps: cust.stamps || 0, redeemed: cust.redeemed || 0, savedAt: Date.now() };
+  cust.history = [];
+  cust.stamps = 0;
+  await saveCustomer(cust);
+  await loadAllCustomers();
+  showToast('Historial de '+name+' reiniciado. Podés restaurarlo si hizo falta.');
+  render();
+}
+
+async function restoreCustomerHistory(id, name){
+  if(!state.isAdmin){ showToast('Solo un administrador puede restaurar el historial.'); return; }
+  const snap = await fsGetDoc(fsDoc(db, 'customers', id));
+  if(!snap.exists()) return;
+  let cust = { id, ...snap.data() };
+  if(!cust.historyBackup){ showToast('No hay ningún respaldo guardado para '+name+'.'); return; }
+  cust.history = cust.historyBackup.history || [];
+  cust.stamps = cust.historyBackup.stamps || 0;
+  cust.redeemed = cust.historyBackup.redeemed != null ? cust.historyBackup.redeemed : cust.redeemed;
+  cust.historyBackup = null;
+  await saveCustomer(cust);
+  await loadAllCustomers();
+  showToast('Historial de '+name+' restaurado');
+  render();
+}
+
 
 function selectCustomer(id){
   state.selectedCustomerId = state.selectedCustomerId === id ? null : id;
@@ -2022,14 +2128,12 @@ async function handleRegister(){
 
   try{
     if(phone){
-      const q = fsQuery(fsCollection(db, 'customers'), fsWhere('phone', '==', phone));
-      const snap = await fsGetDocs(q);
-      if(!snap.empty){ showToast('Ese teléfono ya está registrado en el club.'); return; }
+      const snap = await fsGetDoc(fsDoc(db, 'phoneIndex', phone));
+      if(snap.exists()){ showToast('Ese teléfono ya está registrado en el club.'); return; }
     }
     if(email){
-      const q2 = fsQuery(fsCollection(db, 'customers'), fsWhere('email', '==', email));
-      const snap2 = await fsGetDocs(q2);
-      if(!snap2.empty){ showToast('Ese email ya está registrado en el club.'); return; }
+      const snap2 = await fsGetDoc(fsDoc(db, 'emailIndex', email));
+      if(snap2.exists()){ showToast('Ese email ya está registrado en el club.'); return; }
     }
   }catch(e){
     console.error(e);

@@ -347,6 +347,12 @@ async function initFirebase(){
       if(user && ADMIN_EMAILS.map(e=>e.toLowerCase()).includes((user.email||'').toLowerCase())){
         state.isAdmin = true;
         state.adminEmail = user.email;
+        render();
+        // Las reglas de Firestore ahora exigen estar logueado como admin para listar
+        // clientes y empresas, así que recargamos apenas se confirma el login.
+        await Promise.all([loadAllCustomers(), loadCompanies()]);
+        render();
+        return;
       } else if(user){
         // Se autenticó con Firebase pero no está en la lista de administradores permitidos
         state.isAdmin = false;

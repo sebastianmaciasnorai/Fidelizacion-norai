@@ -356,7 +356,9 @@ async function initFirebase(){
 
 let state = {
   mode: 'customer', // 'customer' | 'staff'
-  screen: 'loading', // loading | register | card
+  screen: 'loading', // loading | register | recover | card
+  recoverWarning: '',
+  recovering: false,
   me: null, // {id, name, phone, email, stamps, redeemed}
   allCustomers: [],
   selectedCustomerId: null,
@@ -509,6 +511,52 @@ function showToast(msg){
   state.toast = msg;
   render();
   setTimeout(()=>{ state.toast = null; }, 2500);
+}
+
+async function handleRecover(){
+  const phoneInput = document.getElementById('recover-phone');
+  const phone = (phoneInput ? phoneInput.value : '').trim();
+
+  if(!phone || phone === '+569 '){
+    state.recoverWarning = 'Ingresá el teléfono con el que te registraste.';
+    render();
+    return;
+  }
+
+  state.recovering = true;
+  state.recoverWarning = '';
+  render();
+
+  try{
+    const q = fsQuery(fsCollection(db, 'customers'), fsWhere('phone', '==', phone));
+    const snap = await fsGetDocs(q);
+    state.recovering = false;
+
+    if(snap.empty){
+      state.recoverWarning = 'No encontramos ninguna tarjeta con ese teléfono. Fijate que esté bien escrito, o registrate como cliente nuevo.';
+      render();
+      return;
+    }
+
+    const docSnap = snap.docs[0];
+    const cust = { id: docSnap.id, ...docSnap.data() };
+    if(cust.companyStatus === 'approved' && cust.companyCode){
+      try{
+        const coSnap = await fsGetDoc(fsDoc(db, 'companies', cust.companyCode));
+        cust.company = coSnap.exists() ? { id: coSnap.id, ...coSnap.data() } : null;
+      }catch(e){ /* ignore */ }
+    }
+
+    localStorage.setItem('norai-my-id', cust.id);
+    state.me = cust;
+    state.screen = 'card';
+    render();
+  }catch(e){
+    console.error(e);
+    state.recovering = false;
+    state.recoverWarning = 'No se pudo conectar para buscar tu tarjeta. Probá de nuevo.';
+    render();
+  }
 }
 
 async function registerCustomer(name, phone, email, birthday){
@@ -938,6 +986,16 @@ function render(){
         + '</div></div>';
       html += '<div class="consent"><input type="checkbox" id="reg-consent"><span>Acepto recibir novedades, ofertas y promociones de Norāi Café Club por email o SMS. Podés darte de baja cuando quieras.</span></div>';
       html += '<button class="btn" onclick="handleRegister()">Crear mi tarjeta</button>';
+      html += '<p class="note" style="text-align:center; margin-top:14px;"><a href="javascript:void(0)" onclick="state.screen=\'recover\'; state.recoverWarning=\'\'; render();" style="color:var(--mustard); text-decoration:underline;">¿Ya tenés una tarjeta? Recuperala acá</a></p>';
+    } else if(state.screen === 'recover'){
+      html += '<h1 class="hero">Recuperar mi tarjeta</h1>';
+      html += '<p class="sub">Ingresá el teléfono con el que te registraste y te devolvemos tu tarjeta con tus sellos, tal como estaba.</p>';
+      html += '<div class="field"><label>Teléfono</label><input id="recover-phone" placeholder="+569 1234 5678" value="+569 "></div>';
+      if(state.recoverWarning){
+        html += '<div class="warn-text">'+state.recoverWarning+'</div>';
+      }
+      html += '<button class="btn" onclick="handleRecover()">'+(state.recovering ? 'Buscando...' : 'Buscar mi tarjeta')+'</button>';
+      html += '<p class="note" style="text-align:center; margin-top:14px;"><a href="javascript:void(0)" onclick="state.screen=\'register\'; state.recoverWarning=\'\'; render();" style="color:var(--mustard); text-decoration:underline;">Volver a registrarme</a></p>';
     } else if(state.screen === 'card'){
       html += renderCustomerCard(state.me, true);
     }

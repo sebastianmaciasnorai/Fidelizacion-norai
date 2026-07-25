@@ -756,6 +756,14 @@ function renderQR(containerId, text){
   }, 0);
 }
 
+function isIOSDevice(){
+  const ua = navigator.userAgent || '';
+  const isIPhoneOrIPad = /iPhone|iPad|iPod/.test(ua);
+  // iPadOS 13+ reports as "Macintosh" but has touch support, unlike real Macs
+  const isTouchMac = /Macintosh/.test(ua) && navigator.maxTouchPoints > 1;
+  return isIPhoneOrIPad || isTouchMac;
+}
+
 async function saveToGoogleWallet(customerId, name, stamps){
   showToast('Preparando tu tarjeta de Google Wallet...');
   try{
@@ -805,9 +813,17 @@ function renderCustomerCard(cust, isOwn){
   if(isOwn && !cust.disabled){
     const star = '<svg viewBox="0 0 24 24"><path d="M12 2l2.9 6.26L22 9.27l-5 4.87L18.18 21 12 17.27 5.82 21 7 14.14l-5-4.87 7.1-1.01L12 2z"/></svg>';
     const googleWord = '<span class="google-wordmark-inline"><span style="color:#4285F4;">G</span><span style="color:#EA4335;">o</span><span style="color:#FBBC05;">o</span><span style="color:#4285F4;">g</span><span style="color:#34A853;">l</span><span style="color:#EA4335;">e</span></span>';
-    html += '<button type="button" class="review-btn" style="width:100%; border:none; cursor:pointer; margin-bottom:8px;" onclick="saveToGoogleWallet(\''+cust.id+'\',\''+cust.name.replace(/'/g,"\\'")+'\','+cust.stamps+')">'
-      + '<div class="review-btn-text">🔖 Guardar en Google Wallet</div>'
-      + '</button>';
+    if(isIOSDevice()){
+      html += '<div class="free-banner" style="text-align:left;">'
+        + '📲 <b>¿Querés acceso rápido a tu tarjeta?</b><br>'
+        + 'Tocá el ícono de compartir <span style="font-size:1.1em;">⬆️</span> de Safari y elegí <b>"Agregar a pantalla de inicio"</b>. '
+        + 'Te va a quedar un ícono como si fuera una app, para no tener que buscar el link cada vez.'
+        + '</div>';
+    } else {
+      html += '<button type="button" class="review-btn" style="width:100%; border:none; cursor:pointer; margin-bottom:8px;" onclick="saveToGoogleWallet(\''+cust.id+'\',\''+cust.name.replace(/'/g,"\\'")+'\','+cust.stamps+')">'
+        + '<div class="review-btn-text">🔖 Guardar en Google Wallet</div>'
+        + '</button>';
+    }
     html += '<a href="'+GOOGLE_REVIEW_URL+'" target="_blank" rel="noopener" class="review-btn">'
       + '<div class="review-btn-text">Déjanos tu reseña en '+googleWord+'<span class="review-stars">'+star+star+star+star+star+'</span></div>'
       + '</a>';

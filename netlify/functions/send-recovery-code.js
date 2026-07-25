@@ -57,7 +57,7 @@ exports.handler = async (event) => {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        from: 'Norāi Café Club <onboarding@resend.dev>',
+        from: 'Norāi Café Club <no-reply@norai.cl>',
         to: [email],
         subject: 'Tu código para recuperar tu tarjeta Norāi',
         html

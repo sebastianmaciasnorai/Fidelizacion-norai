@@ -921,7 +921,7 @@ function renderCustomerCard(cust, isOwn){
   if(clientHist.length === 0){
     html += '<div class="history-empty">Todavía no '+(isOwn ? 'tenés' : 'tiene')+' sellos registrados'+(isOwn ? '. Pedí que te lo sumen en caja al retirar tu café.' : '.')+'</div>';
   } else {
-    clientHist.slice(0,10).forEach(h=>{
+    clientHist.slice(0,5).forEach(h=>{
       const d = new Date(h.ts);
       const when = d.toLocaleDateString()+' · '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
       if(h.redemption){
@@ -929,7 +929,8 @@ function renderCustomerCard(cust, isOwn){
       } else if(h.companyDiscount){
         html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--olive);">🏢 Con descuento</b></div>';
       } else {
-        html += '<div class="history-item"><span>'+when+'</span><b>Café ☕</b></div>';
+        const coffeeName = (h.mainCoffee && h.mainCoffee.name) ? h.mainCoffee.name : 'Café';
+        html += '<div class="history-item"><span>'+when+'</span><b>'+coffeeName+' ☕</b></div>';
       }
     });
   }

@@ -845,7 +845,7 @@ async function addStamp(customerId){
     return;
   }
 
-  const already = cust.history.some(h => h.receipt.toLowerCase() === receipt.toLowerCase());
+  const already = cust.history.some(h => h.receipt && h.receipt.toLowerCase() === receipt.toLowerCase());
   if(already){
     state.receiptWarning = 'Esa boleta (N° ' + receipt + ') ya fue usada para sumar un sello de ' + cust.name + '. Revisá antes de continuar.';
     render();

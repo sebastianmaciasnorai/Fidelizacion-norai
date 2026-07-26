@@ -529,6 +529,12 @@ async function loadMe(){
     const myId = localStorage.getItem('norai-my-id');
     if(myId){
       startMyCardListener(myId);
+      setTimeout(()=>{
+        if(state.screen === 'loading'){
+          state.screen = 'register';
+          render();
+        }
+      }, 8000);
       return;
     }
   }catch(e){ console.error(e); }
@@ -1199,7 +1205,21 @@ function restoreFocus(focusInfo){
   }
 }
 
+// Varias actualizaciones (login, escuchas en vivo de clientes/empresas, etc.)
+// pueden llegar casi al mismo tiempo. En vez de redibujar toda la pantalla por
+// cada una (lo que se ve como un parpadeo), las juntamos y solo repintamos una
+// vez por cuadro de animación del navegador.
+let renderPending = false;
 function render(){
+  if(renderPending) return;
+  renderPending = true;
+  requestAnimationFrame(()=>{
+    renderPending = false;
+    renderNow();
+  });
+}
+
+function renderNow(){
   const app = document.getElementById('app');
   const active = document.activeElement;
   const focusInfo = (active && app.contains(active) && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA'))

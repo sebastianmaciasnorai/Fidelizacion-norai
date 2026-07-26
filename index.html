@@ -1175,7 +1175,7 @@ function render(){
   const staffDevice = isStaffDevice();
   if(!staffDevice && state.mode !== 'customer'){ state.mode = 'customer'; }
 
-  html += '<div class="topnav"><div class="brand">'+markSVG(26,'#F2EEE3')
+  html += '<div class="topnav"><div class="brand" onclick="handleBrandTap()" style="cursor:pointer;">'+markSVG(26,'#F2EEE3')
     + '<div><div class="word">NOR\u0100I</div><div class="tag">Café Club</div></div></div>';
   if(staffDevice){
     html += '<div class="mode-toggle">'
@@ -1289,12 +1289,18 @@ function render(){
 
     html += '<div class="receipt-box" style="margin-bottom:18px;">';
     if(state.isAdmin){
+      const isDefaultDevice = (function(){ try{ return localStorage.getItem('norai-default-mode')==='staff'; }catch(e){ return false; } })();
       html += '<div class="who" style="margin-bottom:10px; display:flex; align-items:center; gap:8px;">'
         + '<span style="width:8px; height:8px; border-radius:50%; background:#4C7A4C; display:inline-block; flex-shrink:0;"></span>'
         + '<span><b>Conectado a la nube</b> como '+state.adminEmail+'</span></div>';
       html += '<div class="action-row">'
         + '<button class="btn secondary" onclick="openReportModal()">📊 Ver informes</button>'
         + '<button class="btn secondary" style="color:var(--danger); border-color:rgba(166,67,43,0.4);" onclick="exitAdmin()">Desconectar</button>'
+        + '</div>';
+      html += '<div class="action-row">'
+        + (isDefaultDevice
+            ? '<button class="btn secondary" onclick="clearThisDeviceAdminDefault()">✅ Este ícono ya abre directo en Personal</button>'
+            : '<button class="btn secondary" onclick="setThisDeviceAsAdminDefault()">📌 Fijar este dispositivo en modo Personal</button>')
         + '</div>';
     } else {
       html += '<div class="who">Iniciá sesión para acceder al panel.</div>';
@@ -2187,6 +2193,43 @@ function isStaffDevice(){
   }catch(e){
     return false;
   }
+}
+
+// Desbloqueo manual: tocar el logo 5 veces seguidas (en menos de 3 segundos)
+// pide el código de staff. Esto funciona en cualquier instancia de la app
+// (Safari o un ícono de pantalla de inicio con almacenamiento propio) sin
+// depender de que la URL conserve parámetros al agregarla a inicio.
+let brandTapCount = 0;
+let brandTapTimer = null;
+function handleBrandTap(){
+  brandTapCount++;
+  if(brandTapTimer) clearTimeout(brandTapTimer);
+  brandTapTimer = setTimeout(()=>{ brandTapCount = 0; }, 3000);
+  if(brandTapCount >= 5){
+    brandTapCount = 0;
+    const code = window.prompt('Código de acceso staff:');
+    if(code === 'norai2024'){
+      localStorage.setItem('norai-staff-device', '1');
+      showToast('Modo Personal desbloqueado en este dispositivo');
+      switchMode('staff');
+    } else if(code !== null){
+      showToast('Código incorrecto');
+    }
+  }
+}
+
+// Una vez en modo Personal, esto deja fijado que este dispositivo/ícono
+// siempre abra directo en Personal (útil para un ícono dedicado de admin).
+function setThisDeviceAsAdminDefault(){
+  localStorage.setItem('norai-default-mode', 'staff');
+  showToast('Este dispositivo va a abrir siempre en modo Personal');
+  render();
+}
+
+function clearThisDeviceAdminDefault(){
+  localStorage.removeItem('norai-default-mode');
+  showToast('Este dispositivo ya no abre directo en Personal');
+  render();
 }
 
 // Si este dispositivo/atajo de pantalla de inicio quedó marcado para abrir

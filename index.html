@@ -496,11 +496,10 @@ function startMyCardListener(id){
   if(myCardUnsubscribe){ myCardUnsubscribe(); myCardUnsubscribe = null; }
   myCardUnsubscribe = fsOnSnapshot(fsDoc(db, 'customers', id), async (snap)=>{
     if(!snap.exists()){
-      if(state.me && state.me.id === id){
-        state.me = null;
-        state.screen = 'register';
-        render();
-      }
+      localStorage.removeItem('norai-my-id');
+      state.me = null;
+      state.screen = 'register';
+      render();
       return;
     }
     const data = { id, ...snap.data() };
@@ -513,7 +512,16 @@ function startMyCardListener(id){
     state.me = data;
     if(state.screen === 'loading') state.screen = 'card';
     render();
-  }, (err)=>{ console.error(err); });
+  }, (err)=>{
+    console.error(err);
+    // Si la escucha en vivo falla (permisos, red, etc.), no dejamos la pantalla
+    // trabada en "Cargando...": mostramos la tarjeta guardada si ya la teníamos,
+    // o el registro si es la primera vez.
+    if(!state.me){
+      state.screen = 'register';
+      render();
+    }
+  });
 }
 
 async function loadMe(){
@@ -1561,7 +1569,7 @@ function render(){
                 const clientDisabled = c.companyEnabled === false;
                 const clientExpanded = state.expandedCompanyClientId === c.id;
                 html += '<div class="history-item" style="align-items:center; cursor:pointer;" onclick="toggleCompanyClientExpand(\''+c.id+'\')">'
-                  + '<span>'+c.name+(pending ? ' · pendiente' : clientDisabled ? ' · deshabilitado' : '')+'</span>'
+                  + '<span><b style="color:var(--ink);">'+c.name+'</b>'+(c.rut ? ' <span style="color:var(--muted);">· '+formatRut(c.rut)+'</span>' : ' <span style="color:var(--muted);">· sin RUT</span>')+(pending ? ' · pendiente' : clientDisabled ? ' · deshabilitado' : '')+'</span>'
                   + '<span style="display:flex; gap:6px;" onclick="event.stopPropagation();">'
                   + (pending
                       ? '<button class="mini-btn" onclick="approveCompany(\''+c.id+'\')">Aprobar</button><button class="mini-btn danger" onclick="rejectCompany(\''+c.id+'\')">Rechazar</button>'

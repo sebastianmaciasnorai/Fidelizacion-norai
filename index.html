@@ -2183,7 +2183,7 @@ document.addEventListener('click', function(e){
 function isStaffDevice(){
   try{
     const params = new URLSearchParams(window.location.search);
-    if(params.get('staff') === 'norai2024'){
+    if(params.get('staff') === 'norai2026'){
       localStorage.setItem('norai-staff-device', '1');
     }
     if(params.get('mode') === 'staff'){
@@ -2208,7 +2208,7 @@ function handleBrandTap(){
   if(brandTapCount >= 5){
     brandTapCount = 0;
     const code = window.prompt('Código de acceso staff:');
-    if(code === 'norai2024'){
+    if(code === 'norai2026'){
       localStorage.setItem('norai-staff-device', '1');
       showToast('Modo Personal desbloqueado en este dispositivo');
       switchMode('staff');

@@ -435,6 +435,9 @@ let state = {
   showCompanyForm: false,
   expandedCompanyId: null,
   showCompaniesPanel: false,
+  showCreateCompanyForm: false,
+  showPromoPanel: false,
+  deletedCompanies: [],
   addCompanyClientSearch: '',
   editingCompanyId: null,
   editCompanyName: '',
@@ -527,6 +530,7 @@ async function loadMe(){
 
 let customersUnsubscribe = null;
 let companiesUnsubscribe = null;
+let deletedCompaniesUnsubscribe = null;
 
 // Mientras el admin esté logueado, dejamos "escuchando" en vivo los clientes y
 // empresas: cualquier cambio (nuevo cliente, solicitud de empresa, sello sumado
@@ -543,11 +547,17 @@ function startAdminRealtimeListeners(){
     state.allCompanies = snap.docs.map(d => ({ id: d.id, ...d.data() }));
     render();
   }, (err)=>{ console.error(err); });
+
+  deletedCompaniesUnsubscribe = fsOnSnapshot(fsCollection(db, 'deletedCompanies'), (snap)=>{
+    state.deletedCompanies = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (b.deletedAt||0) - (a.deletedAt||0));
+    render();
+  }, (err)=>{ console.error(err); });
 }
 
 function stopAdminRealtimeListeners(){
   if(customersUnsubscribe){ customersUnsubscribe(); customersUnsubscribe = null; }
   if(companiesUnsubscribe){ companiesUnsubscribe(); companiesUnsubscribe = null; }
+  if(deletedCompaniesUnsubscribe){ deletedCompaniesUnsubscribe(); deletedCompaniesUnsubscribe = null; }
 }
 
 async function loadAllCustomers(){
@@ -1483,22 +1493,25 @@ function render(){
     }
 
     if(state.isAdmin){
-      html += '<button class="btn secondary" style="margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;" onclick="state.showCompaniesPanel = !state.showCompaniesPanel; render();">'
+      html += '<button class="btn secondary" style="margin-top:20px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;" onclick="state.showCompaniesPanel = !state.showCompaniesPanel; render();">'
         + '<span>🏢 Empresas con descuento'+(state.allCompanies.length ? ' ('+state.allCompanies.length+')' : '')+'</span>'
         + '<span>'+(state.showCompaniesPanel ? '▲' : '▼')+'</span>'
         + '</button>';
     }
     if(state.isAdmin && state.showCompaniesPanel){
-      html += '<div class="receipt-box" style="margin-bottom:14px;">';
-      html += '<div class="field" style="margin-bottom:8px;"><label>Nombre de la empresa</label>'
-        + '<input id="new-company-name" value="'+(state.newCompanyName||'').replace(/"/g,'&quot;')+'" oninput="state.newCompanyName=this.value;"></div>';
-      html += '<div class="field" style="margin-bottom:8px;"><label>Código (para compartir con sus empleados)</label>'
-        + '<input id="new-company-code" placeholder="Ej: ACME2026" value="'+(state.newCompanyCode||'').replace(/"/g,'&quot;')+'" oninput="state.newCompanyCode=this.value;"></div>';
-      html += '<div class="field" style="margin-bottom:8px;"><label>Descuento</label>'
-        + '<input id="new-company-discount" placeholder="Ej: 15% en toda compra" value="'+(state.newCompanyDiscount||'').replace(/"/g,'&quot;')+'" oninput="state.newCompanyDiscount=this.value;"></div>';
-      html += '<button class="btn secondary" onclick="createCompany()">Crear empresa</button>';
-      html += '<p class="note" style="margin-top:10px; margin-bottom:0;">Los descuentos de empresa no se combinan con otras promociones: una boleta marcada "con descuento de empresa" no suma sello para el café gratis.</p>';
-      html += '</div>';
+      html += '<button class="btn secondary" style="margin-bottom:14px;" onclick="state.showCreateCompanyForm = !state.showCreateCompanyForm; render();">'+(state.showCreateCompanyForm ? '✕ Cancelar' : '+ Crear nueva empresa')+'</button>';
+      if(state.showCreateCompanyForm){
+        html += '<div class="receipt-box" style="margin-bottom:14px;">';
+        html += '<div class="field" style="margin-bottom:8px;"><label>Nombre de la empresa</label>'
+          + '<input id="new-company-name" value="'+(state.newCompanyName||'').replace(/"/g,'&quot;')+'" oninput="state.newCompanyName=this.value;"></div>';
+        html += '<div class="field" style="margin-bottom:8px;"><label>Código (para compartir con sus empleados)</label>'
+          + '<input id="new-company-code" placeholder="Ej: ACME2026" value="'+(state.newCompanyCode||'').replace(/"/g,'&quot;')+'" oninput="state.newCompanyCode=this.value;"></div>';
+        html += '<div class="field" style="margin-bottom:8px;"><label>Descuento</label>'
+          + '<input id="new-company-discount" placeholder="Ej: 15% en toda compra" value="'+(state.newCompanyDiscount||'').replace(/"/g,'&quot;')+'" oninput="state.newCompanyDiscount=this.value;"></div>';
+        html += '<button class="btn secondary" onclick="createCompany()">Crear empresa</button>';
+        html += '<p class="note" style="margin-top:10px; margin-bottom:0;">Los descuentos de empresa no se combinan con otras promociones: una boleta marcada "con descuento de empresa" no suma sello para el café gratis.</p>';
+        html += '</div>';
+      }
 
       if(state.allCompanies.length === 0){
         html += '<div class="empty-state" style="padding:14px 10px;">Todavía no creaste ninguna empresa.</div>';
@@ -1593,6 +1606,18 @@ function render(){
         html += '</div>';
       }
 
+      if(state.deletedCompanies.length > 0){
+        html += '<div class="section-label">Empresas eliminadas recientemente</div>';
+        html += '<div class="staff-list" style="margin-bottom:14px;">';
+        state.deletedCompanies.slice(0,5).forEach(co=>{
+          html += '<div class="cust-row">'
+            + '<div><div class="cname">'+co.name+'<span class="cid">#'+co.id+'</span></div><div class="cmeta">'+co.discount+'</div></div>'
+            + '<button class="mini-btn" onclick="restoreDeletedCompany(\''+co.id+'\', \''+co.name.replace(/'/g,"\\'")+'\')">↩️ Restaurar</button>'
+            + '</div>';
+        });
+        html += '</div>';
+      }
+
       const orphanPending = state.allCustomers.filter(c => c.companyStatus === 'pending' && !state.allCompanies.some(co => co.id === c.companyCode));
       if(orphanPending.length > 0){
         html += '<div class="section-label">Solicitudes con código no reconocido ('+orphanPending.length+')</div>';
@@ -1607,6 +1632,14 @@ function render(){
       }
     }
 
+    if(state.isAdmin){
+      html += '<button class="btn secondary" style="margin-bottom:14px; display:flex; justify-content:space-between; align-items:center;" onclick="state.showPromoPanel = !state.showPromoPanel; render();">'
+        + '<span>📣 Enviar promoción</span>'
+        + '<span>'+(state.showPromoPanel ? '▲' : '▼')+'</span>'
+        + '</button>';
+    }
+
+    if(state.isAdmin && state.showPromoPanel){
     html += '<div class="section-label">Enviar promoción</div>';
     if(state.allCustomers.length === 0){
       html += '<div class="empty-state">Necesitás al menos un cliente registrado para enviar promociones.</div>';
@@ -1628,6 +1661,7 @@ function render(){
 
     if(state.allCustomers.length > 0){
       html += '<p class="note">El N° de boleta y los productos quedan guardados por cliente para cruzarlos contra Toteat y armar su perfil de gustos con el tiempo. Acá se cargan a mano; en producción, al confirmar la boleta, tu backend le pediría a la API de Toteat el detalle de esa orden (los productos vendidos) y completaría este perfil automáticamente, sin que el staff tenga que tipearlo.</p>';
+    }
     }
 
     } // fin del bloque protegido por login de administrador
@@ -1738,6 +1772,7 @@ async function createCompany(){
     state.newCompanyName = '';
     state.newCompanyCode = '';
     state.newCompanyDiscount = '';
+    state.showCreateCompanyForm = false;
     await loadCompanies();
     showToast('Empresa creada');
     render();
@@ -1760,18 +1795,51 @@ async function deleteCompany(id, name){
   if(!state.isAdmin){ showToast('Solo un administrador puede eliminar empresas.'); return; }
   const linkedCount = state.allCustomers.filter(c => c.companyCode === id && (c.companyStatus === 'approved' || c.companyStatus === 'pending')).length;
   const extra = linkedCount > 0 ? ' '+linkedCount+' cliente(s) vinculado(s) van a mantener su tarjeta normal, solo van a perder el beneficio de esta empresa.' : '';
-  const sure = window.confirm('¿Eliminar definitivamente la empresa '+name+'?'+extra);
+  const sure = window.confirm('¿Eliminar la empresa '+name+'?'+extra+' Vas a poder restaurarla después si fue un error.');
   if(!sure) return;
   try{
+    const co = state.allCompanies.find(x => x.id === id);
+    if(co){
+      const { id: _drop, ...coData } = co;
+      await fsSetDoc(fsDoc(db, 'deletedCompanies', id), { ...coData, deletedAt: Date.now() });
+    }
     await fsDeleteDoc(fsDoc(db, 'companies', id));
-    await loadCompanies();
     if(state.expandedCompanyId === id) state.expandedCompanyId = null;
     if(state.editingCompanyId === id) state.editingCompanyId = null;
+    await trimDeletedCompaniesBackup();
     showToast('Empresa '+name+' eliminada. Sus clientes conservan la tarjeta, sin el beneficio.');
     render();
   }catch(e){
     console.error(e);
     showToast('No se pudo eliminar la empresa. Probá de nuevo.');
+  }
+}
+
+// Solo guardamos las últimas 5 empresas eliminadas como respaldo
+async function trimDeletedCompaniesBackup(){
+  try{
+    const snap = await fsGetDocs(fsCollection(db, 'deletedCompanies'));
+    const all = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (b.deletedAt||0) - (a.deletedAt||0));
+    const toRemove = all.slice(5);
+    for(const item of toRemove){
+      await fsDeleteDoc(fsDoc(db, 'deletedCompanies', item.id));
+    }
+  }catch(e){ console.error(e); }
+}
+
+async function restoreDeletedCompany(id, name){
+  if(!state.isAdmin){ showToast('Solo un administrador puede restaurar empresas.'); return; }
+  try{
+    const snap = await fsGetDoc(fsDoc(db, 'deletedCompanies', id));
+    if(!snap.exists()){ showToast('No encontramos esa empresa en el respaldo.'); return; }
+    const { deletedAt, ...coData } = snap.data();
+    await fsSetDoc(fsDoc(db, 'companies', id), coData);
+    await fsDeleteDoc(fsDoc(db, 'deletedCompanies', id));
+    showToast('Empresa '+name+' restaurada');
+    render();
+  }catch(e){
+    console.error(e);
+    showToast('No se pudo restaurar la empresa. Probá de nuevo.');
   }
 }
 

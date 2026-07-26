@@ -318,7 +318,7 @@ const firebaseConfig = {
    }
 */
 
-let db, fsDoc, fsGetDoc, fsSetDoc, fsGetDocs, fsCollection, fsQuery, fsWhere, fsDeleteDoc;
+let db, fsDoc, fsGetDoc, fsSetDoc, fsGetDocs, fsCollection, fsQuery, fsWhere, fsDeleteDoc, fsOnSnapshot;
 let auth, authSignInEmail, authSignInGoogle, authSignOut, GoogleProvider;
 
 async function initFirebase(){
@@ -334,7 +334,7 @@ async function initFirebase(){
     const app = initializeApp(firebaseConfig);
     db = fs.getFirestore(app);
     fsDoc = fs.doc; fsGetDoc = fs.getDoc; fsSetDoc = fs.setDoc; fsDeleteDoc = fs.deleteDoc;
-    fsGetDocs = fs.getDocs; fsCollection = fs.collection;
+    fsGetDocs = fs.getDocs; fsCollection = fs.collection; fsOnSnapshot = fs.onSnapshot;
     fsQuery = fs.query; fsWhere = fs.where;
 
     auth = authMod.getAuth(app);
@@ -485,23 +485,38 @@ function sealSVG(size, fill, textColor){
     + '</svg>';
 }
 
+let myCardUnsubscribe = null;
+
+function startMyCardListener(id){
+  if(myCardUnsubscribe){ myCardUnsubscribe(); myCardUnsubscribe = null; }
+  myCardUnsubscribe = fsOnSnapshot(fsDoc(db, 'customers', id), async (snap)=>{
+    if(!snap.exists()){
+      if(state.me && state.me.id === id){
+        state.me = null;
+        state.screen = 'register';
+        render();
+      }
+      return;
+    }
+    const data = { id, ...snap.data() };
+    if(data.companyStatus === 'approved' && data.companyCode){
+      try{
+        const coSnap = await fsGetDoc(fsDoc(db, 'companies', data.companyCode));
+        data.company = coSnap.exists() ? { id: coSnap.id, ...coSnap.data() } : null;
+      }catch(e){ data.company = null; }
+    }
+    state.me = data;
+    if(state.screen === 'loading') state.screen = 'card';
+    render();
+  }, (err)=>{ console.error(err); });
+}
+
 async function loadMe(){
   try{
     const myId = localStorage.getItem('norai-my-id');
     if(myId){
-      const snap = await fsGetDoc(fsDoc(db, 'customers', myId));
-      if(snap.exists()){
-        state.me = { id: myId, ...snap.data() };
-        if(state.me.companyStatus === 'approved' && state.me.companyCode){
-          try{
-            const coSnap = await fsGetDoc(fsDoc(db, 'companies', state.me.companyCode));
-            state.me.company = coSnap.exists() ? { id: coSnap.id, ...coSnap.data() } : null;
-          }catch(e){ state.me.company = null; }
-        }
-        state.screen = 'card';
-        render();
-        return;
-      }
+      startMyCardListener(myId);
+      return;
     }
   }catch(e){ console.error(e); }
   state.screen = 'register';
@@ -722,6 +737,7 @@ async function verifyRecoveryCode(){
     state.recoverPendingCustomer = null;
     state.recoverCodeInput = '';
     state.verifyingCode = false;
+    startMyCardListener(fresh.id);
     render();
   }catch(e){
     console.error(e);
@@ -748,6 +764,7 @@ async function registerCustomer(name, phone, email, birthday){
   localStorage.setItem('norai-my-id', id);
   state.me = cust;
   state.screen = 'card';
+  startMyCardListener(id);
   render();
   showToast('¡Listo! Tu tarjeta se creó correctamente 🎉');
 }
@@ -1383,14 +1400,10 @@ function render(){
               + '<input id="receipt-input" placeholder="Ej: 004582" value="'+(state.receiptValue||'').replace(/"/g,'&quot;')+'" oninput="state.receiptValue=this.value; state.receiptWarning=\'\';"></div>';
             html += '<p class="note" style="margin-top:0; margin-bottom:10px;">Al sumar, la app le pregunta a Toteat qué café(s) compró, el monto y valida que esa boleta esté pagada y sin nota de crédito — no hace falta tipear productos ni monto a mano.</p>';
             if(activeCompanyBenefit){
-              html += '<div class="checkbox-row" style="margin-bottom:6px; align-items:flex-start;">'
-                + '<input type="checkbox" checked disabled style="margin-top:2px;">'
-                + '<span style="font-size:0.78rem;">Esta boleta tiene descuento de empresa aplicado (no suma sello — los descuentos de empresa no se combinan con otras promociones)</span></div>';
-              html += '<p class="note" style="margin-top:0; margin-bottom:10px;">'+c.name+' tiene activo el descuento de <b>'+co.name+'</b> ('+co.discount+'). Mientras esté activo, todas sus compras usan ese descuento y no suman sello. Para volver a sumar sellos, desactivá su beneficio desde "Empresas con descuento".</p>';
-            } else {
-              html += '<div class="checkbox-row" style="margin-bottom:10px; align-items:flex-start;">'
-                + '<input type="checkbox" id="receipt-company-discount" style="margin-top:2px;" '+(state.receiptCompanyDiscount?'checked':'')+' onchange="state.receiptCompanyDiscount=this.checked;">'
-                + '<span style="font-size:0.78rem;">Esta boleta tiene descuento de empresa aplicado (no suma sello — los descuentos de empresa no se combinan con otras promociones)</span></div>';
+              html += '<div style="background:rgba(231,185,78,0.22); border:1.5px solid var(--mustard); border-radius:14px; padding:14px 16px; margin-bottom:14px;">'
+                + '<div style="font-weight:700; font-size:0.9rem; color:var(--mustard-deep); margin-bottom:4px;">🏢 Esta boleta tiene descuento de empresa</div>'
+                + '<div style="font-size:0.82rem; color:var(--ink); line-height:1.5;">'+c.name+' tiene activo el descuento de <b>'+co.name+'</b> ('+co.discount+'). Esta compra <b>no suma sello</b> — los descuentos de empresa no se combinan con otras promociones. Para volver a sumar sellos, desactivá su beneficio desde "Empresas con descuento".</div>'
+                + '</div>';
             }
             if(state.receiptWarning){
               html += '<div class="warn-text">'+state.receiptWarning+'</div>';
@@ -2145,6 +2158,7 @@ async function handleRegister(){
 }
 
 async function resetMe(){
+  if(myCardUnsubscribe){ myCardUnsubscribe(); myCardUnsubscribe = null; }
   localStorage.removeItem('norai-my-id');
   state.me = null;
   state.screen = 'register';

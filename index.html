@@ -349,20 +349,21 @@ async function initFirebase(){
         state.adminEmail = user.email;
         render();
         // Las reglas de Firestore ahora exigen estar logueado como admin para listar
-        // clientes y empresas, así que recargamos apenas se confirma el login.
-        await Promise.all([loadAllCustomers(), loadCompanies()]);
-        render();
+        // clientes y empresas; apenas se confirma el login, dejamos todo escuchando en vivo.
+        startAdminRealtimeListeners();
         return;
       } else if(user){
         // Se autenticó con Firebase pero no está en la lista de administradores permitidos
         state.isAdmin = false;
         state.adminEmail = null;
+        stopAdminRealtimeListeners();
         showToast('Esta cuenta no tiene permisos de administrador');
         await authSignOut(auth);
         return;
       } else {
         state.isAdmin = false;
         state.adminEmail = null;
+        stopAdminRealtimeListeners();
       }
       render();
     });
@@ -433,6 +434,7 @@ let state = {
   companyRutInput: '',
   showCompanyForm: false,
   expandedCompanyId: null,
+  showCompaniesPanel: false,
   addCompanyClientSearch: '',
   editingCompanyId: null,
   editCompanyName: '',
@@ -521,6 +523,31 @@ async function loadMe(){
   }catch(e){ console.error(e); }
   state.screen = 'register';
   render();
+}
+
+let customersUnsubscribe = null;
+let companiesUnsubscribe = null;
+
+// Mientras el admin esté logueado, dejamos "escuchando" en vivo los clientes y
+// empresas: cualquier cambio (nuevo cliente, solicitud de empresa, sello sumado
+// desde otro dispositivo, etc.) se refleja solo, sin recargar la pestaña.
+function startAdminRealtimeListeners(){
+  stopAdminRealtimeListeners();
+  customersUnsubscribe = fsOnSnapshot(fsCollection(db, 'customers'), (snap)=>{
+    state.allCustomers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    backfillCustomerIndexes(state.allCustomers);
+    render();
+  }, (err)=>{ console.error(err); });
+
+  companiesUnsubscribe = fsOnSnapshot(fsCollection(db, 'companies'), (snap)=>{
+    state.allCompanies = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    render();
+  }, (err)=>{ console.error(err); });
+}
+
+function stopAdminRealtimeListeners(){
+  if(customersUnsubscribe){ customersUnsubscribe(); customersUnsubscribe = null; }
+  if(companiesUnsubscribe){ companiesUnsubscribe(); companiesUnsubscribe = null; }
 }
 
 async function loadAllCustomers(){
@@ -1057,7 +1084,7 @@ function renderCustomerCard(cust, isOwn){
     + '<div class="tier">Nivel<b>'+tierLabel+'</b></div></div>';
 
   if(cust.companyStatus === 'approved' && cust.company && cust.company.active !== false && cust.companyEnabled !== false){
-    html += '<div class="free-banner" style="background:rgba(231,185,78,0.22); border-color:rgba(231,185,78,0.55); color:var(--mustard);">🏢 Beneficio '+cust.company.name+': '+cust.company.discount+'</div>';
+    html += '<div class="free-banner" style="background:rgba(231,185,78,0.22); border-color:rgba(231,185,78,0.55); color:var(--ink);">🏢 Beneficio <b>'+cust.company.name+'</b>: '+cust.company.discount+'</div>';
   } else if(cust.companyStatus === 'pending'){
     html += '<div class="free-banner">Tu código de empresa está en revisión.</div>';
   }
@@ -1109,7 +1136,7 @@ function renderCustomerCard(cust, isOwn){
       if(h.redemption){
         html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--mustard-deep);">🎉 Café gratis</b></div>';
       } else if(h.companyDiscount){
-        html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--olive);">🏢 Con descuento</b></div>';
+        html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--olive);">🏢 Con descuento'+(h.companyDiscountLabel ? ' ('+h.companyDiscountLabel+')' : '')+'</b></div>';
       } else {
         const coffeeName = (h.mainCoffee && h.mainCoffee.name) ? h.mainCoffee.name : 'Café';
         html += '<div class="history-item"><span>'+when+'</span><b>'+coffeeName+' ☕</b></div>';
@@ -1456,7 +1483,12 @@ function render(){
     }
 
     if(state.isAdmin){
-      html += '<div class="section-label">Empresas con descuento</div>';
+      html += '<button class="btn secondary" style="margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;" onclick="state.showCompaniesPanel = !state.showCompaniesPanel; render();">'
+        + '<span>🏢 Empresas con descuento'+(state.allCompanies.length ? ' ('+state.allCompanies.length+')' : '')+'</span>'
+        + '<span>'+(state.showCompaniesPanel ? '▲' : '▼')+'</span>'
+        + '</button>';
+    }
+    if(state.isAdmin && state.showCompaniesPanel){
       html += '<div class="receipt-box" style="margin-bottom:14px;">';
       html += '<div class="field" style="margin-bottom:8px;"><label>Nombre de la empresa</label>'
         + '<input id="new-company-name" value="'+(state.newCompanyName||'').replace(/"/g,'&quot;')+'" oninput="state.newCompanyName=this.value;"></div>';
@@ -1487,6 +1519,7 @@ function render(){
             + '<div class="mini-actions">'
               + '<button class="mini-btn" onclick="event.stopPropagation(); toggleCompanyEditForm(\''+co.id+'\')">Modificar</button>'
               + '<button class="mini-btn '+(co.active?'danger':'')+'" onclick="event.stopPropagation(); toggleCompanyActive(\''+co.id+'\')">'+(co.active?'Desactivar':'Activar')+'</button>'
+              + '<button class="mini-btn danger" onclick="event.stopPropagation(); deleteCompany(\''+co.id+'\', \''+co.name.replace(/'/g,"\\'")+'\')">Eliminar</button>'
               + '</div>'
             + '</div>';
 
@@ -1721,6 +1754,25 @@ async function toggleCompanyActive(id){
   await saveCompany({ ...co, active: !co.active });
   await loadCompanies();
   render();
+}
+
+async function deleteCompany(id, name){
+  if(!state.isAdmin){ showToast('Solo un administrador puede eliminar empresas.'); return; }
+  const linkedCount = state.allCustomers.filter(c => c.companyCode === id && (c.companyStatus === 'approved' || c.companyStatus === 'pending')).length;
+  const extra = linkedCount > 0 ? ' '+linkedCount+' cliente(s) vinculado(s) van a mantener su tarjeta normal, solo van a perder el beneficio de esta empresa.' : '';
+  const sure = window.confirm('¿Eliminar definitivamente la empresa '+name+'?'+extra);
+  if(!sure) return;
+  try{
+    await fsDeleteDoc(fsDoc(db, 'companies', id));
+    await loadCompanies();
+    if(state.expandedCompanyId === id) state.expandedCompanyId = null;
+    if(state.editingCompanyId === id) state.editingCompanyId = null;
+    showToast('Empresa '+name+' eliminada. Sus clientes conservan la tarjeta, sin el beneficio.');
+    render();
+  }catch(e){
+    console.error(e);
+    showToast('No se pudo eliminar la empresa. Probá de nuevo.');
+  }
 }
 
 async function requestCompanyCode(){

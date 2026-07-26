@@ -2180,11 +2180,22 @@ function isStaffDevice(){
     if(params.get('staff') === 'norai2024'){
       localStorage.setItem('norai-staff-device', '1');
     }
+    if(params.get('mode') === 'staff'){
+      localStorage.setItem('norai-default-mode', 'staff');
+    }
     return localStorage.getItem('norai-staff-device') === '1';
   }catch(e){
     return false;
   }
 }
+
+// Si este dispositivo/atajo de pantalla de inicio quedó marcado para abrir
+// directo en modo Personal, lo dejamos listo antes del primer render.
+try{
+  if(isStaffDevice() && localStorage.getItem('norai-default-mode') === 'staff'){
+    state.mode = 'staff';
+  }
+}catch(e){}
 
 (async function start(){
   const ok = await initFirebase();

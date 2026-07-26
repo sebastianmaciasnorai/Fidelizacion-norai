@@ -1146,7 +1146,7 @@ function renderCustomerCard(cust, isOwn){
       if(h.redemption){
         html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--mustard-deep);">🎉 Café gratis</b></div>';
       } else if(h.companyDiscount){
-        html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--olive);">🏢 Con descuento'+(h.companyDiscountLabel ? ' ('+h.companyDiscountLabel+')' : '')+'</b></div>';
+        html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--olive); white-space:nowrap;">🏢 '+(h.companyDiscountLabel || 'Con descuento')+'</b></div>';
       } else {
         const coffeeName = (h.mainCoffee && h.mainCoffee.name) ? h.mainCoffee.name : 'Café';
         html += '<div class="history-item"><span>'+when+'</span><b>'+coffeeName+' ☕</b></div>';

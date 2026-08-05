@@ -76,11 +76,36 @@ exports.handler = async (event) => {
     category: p.hierarchyName || null,
   }));
 
+  // --- Detección de café por jerarquía Toteat (AB.120 Café) ---
+  // Toteat clasifica cada producto en una jerarquía interna (ver panel de Productos).
+  // El café vive bajo el código "AB.120". Ese código llega en el campo de jerarquía
+  // del producto (probamos varios nombres posibles porque no hay una boleta real
+  // todavía para confirmar el nombre exacto del campo que usa la API de ventas).
+  const HIERARCHY_CODE = 'AB.120';
+
+  function getHierarchyText(p) {
+    return String(
+      p.hierarchyName || p.hierarchy || p.hierarchyCode || p.hierarchyId ||
+      p.categoryName || p.category || ''
+    );
+  }
+
+  function isCoffeeByHierarchy(p) {
+    return getHierarchyText(p).toUpperCase().includes(HIERARCHY_CODE);
+  }
+
+  // Respaldo por nombre, solo para productos que no traigan el campo de jerarquía
+  // (o mientras confirmamos el nombre exacto del campo con una boleta real).
+  const COFFEE_KEYWORDS = ['cafe', 'café', 'latte', 'capuccino', 'cappuccino', 'espresso', 'expreso', 'americano', 'macchiato', 'mocha', 'moka', 'flat white', 'cortado', 'cold brew'];
+  function isCoffeeByName(p) {
+    return COFFEE_KEYWORDS.some(k => (p.name || '').toLowerCase().includes(k));
+  }
+
+  const coffeeItems = rawProducts.filter(p => isCoffeeByHierarchy(p) || (!getHierarchyText(p) && isCoffeeByName(p)));
+
   // Si hay varios cafés en la misma boleta, nos quedamos con el de mayor valor
   // como "el café" representativo de esta visita.
-  const COFFEE_KEYWORDS = ['cafe', 'café', 'latte', 'capuccino', 'cappuccino', 'espresso', 'expreso', 'americano', 'macchiato', 'mocha', 'moka', 'flat white', 'cortado', 'cold brew'];
-  const coffeeItems = rawProducts.filter(p => COFFEE_KEYWORDS.some(k => (p.name || '').toLowerCase().includes(k)));
-  const mainCoffeeSource = coffeeItems.length > 0 ? coffeeItems : rawProducts;
+  const mainCoffeeSource = coffeeItems.length > 0 ? coffeeItems : rawProducts.filter(isCoffeeByName);
   const mainCoffee = mainCoffeeSource.length > 0
     ? mainCoffeeSource.reduce((max, p) => (p.payed > (max ? max.payed : -1) ? p : max), null)
     : null;

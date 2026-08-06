@@ -146,9 +146,9 @@
   }
 
   .qr-box{ display:flex; justify-content:center; margin: 18px 0 6px; position:relative; z-index:1; }
-  .qr-frame{ background:var(--mustard); padding:14px 10px; border-radius:14px; width:100%; max-width:280px; display:flex; justify-content:center; box-shadow:0 8px 20px -8px rgba(0,0,0,0.4); }
-  .qr-frame svg{ width:100%; height:auto; max-width:260px; }
-  .id-line{ text-align:center; font-family:'JetBrains Mono'; font-size:0.68rem; color:rgba(251,249,244,0.5); letter-spacing:0.05em; margin-top:8px; position:relative; z-index:1; }
+  .qr-frame{ background:var(--mustard); padding:10px 8px; border-radius:12px; width:auto; max-width:150px; display:flex; justify-content:center; box-shadow:0 8px 20px -8px rgba(0,0,0,0.4); }
+  .qr-frame svg{ width:100%; height:auto; max-width:130px; }
+  .id-line{ text-align:center; font-family:'JetBrains Mono'; font-weight:600; font-size:0.78rem; color:var(--paper); letter-spacing:0.08em; margin-top:10px; position:relative; z-index:1; }
 
   .card-address{
     text-align:center; font-size:0.62rem; color:rgba(251,249,244,0.55); letter-spacing:0.08em;
@@ -448,7 +448,7 @@ const STAMPS_GOAL = 5;
 // Se muestra abajo de todo en la app para poder confirmar, desde el celular,
 // que Netlify ya terminó de desplegar la versión que acabás de subir
 // (compará lo que ves acá con la fecha/etiqueta que le pusiste al subir el archivo).
-const APP_VERSION = '2026-08-06 · fix URL de JsBarcode + fondo mustard con rayas oscuras';
+const APP_VERSION = '2026-08-06 · código de barras más chico + ID en blanco debajo';
 
 function uid(prefix){ return prefix + '-' + Math.random().toString(36).slice(2,9); }
 
@@ -927,10 +927,10 @@ function renderBarcode(containerId, text){
           format: 'CODE128',
           lineColor: '#211F1A',
           background: '#E7B94E',
-          width: 2.4,
-          height: 74,
+          width: 1.8,
+          height: 46,
           displayValue: false,
-          margin: 8,
+          margin: 6,
         });
       }catch(e){ console.error('No se pudo generar el código de barras', e); }
     } else if(el){

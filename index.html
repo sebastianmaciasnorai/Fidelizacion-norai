@@ -6,7 +6,7 @@
 <title>Norāi Café Club</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Work+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsbarcode/3.11.5/JsBarcode.all.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
@@ -146,9 +146,8 @@
   }
 
   .qr-box{ display:flex; justify-content:center; margin: 18px 0 6px; position:relative; z-index:1; }
-  .qr-frame{ background:var(--mustard); padding:10px 8px; border-radius:12px; width:auto; max-width:150px; display:flex; justify-content:center; box-shadow:0 8px 20px -8px rgba(0,0,0,0.4); }
-  .qr-frame svg{ width:100%; height:auto; max-width:130px; }
-  .id-line{ text-align:center; font-family:'JetBrains Mono'; font-weight:600; font-size:0.78rem; color:var(--paper); letter-spacing:0.08em; margin-top:10px; position:relative; z-index:1; }
+  .qr-frame{ background:#FFFFFF; padding:12px; border-radius:14px; }
+  .id-line{ text-align:center; font-family:'JetBrains Mono'; font-size:0.68rem; color:rgba(251,249,244,0.5); letter-spacing:0.05em; margin-top:8px; position:relative; z-index:1; }
 
   .card-address{
     text-align:center; font-size:0.62rem; color:rgba(251,249,244,0.55); letter-spacing:0.08em;
@@ -448,19 +447,49 @@ const STAMPS_GOAL = 5;
 // Se muestra abajo de todo en la app para poder confirmar, desde el celular,
 // que Netlify ya terminó de desplegar la versión que acabás de subir
 // (compará lo que ves acá con la fecha/etiqueta que le pusiste al subir el archivo).
-const APP_VERSION = '2026-08-06 · IDs de 5 dígitos + búsqueda robusta para lector de código de barras';
+const APP_VERSION = '2026-08-06 · vuelta a QR + ID legible (iniciales + RUT)';
 
 function uid(prefix){ return prefix + '-' + Math.random().toString(36).slice(2,9); }
 
-async function generateFriendlyId(){
-  for(let i=0; i<25; i++){
-    const candidate = String(Math.floor(10000 + Math.random()*90000)); // 5 dígitos, fácil de teclear
+// Quita tildes/ñ y deja solo letras en minúscula, para armar el ID legible.
+function normalizeForId(str){
+  return (str||'')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z]/g, '');
+}
+
+function rutDigitsOnly(raw){
+  return (raw||'').toString().toUpperCase().replace(/[^0-9K]/g, '');
+}
+
+// ID legible: 2 primeras letras del nombre + 2 primeras del apellido + últimos 3 dígitos
+// del RUT (sin el dígito verificador). Ej: "Sebastian Macias" + RUT 16142935-K -> "sema935".
+// Mucho más fácil de recordar/buscar que un número random, y sirve como respaldo si algún
+// día no se puede escanear el QR.
+async function generateFriendlyId(name, rut){
+  const words = (name||'').trim().split(/\s+/).map(normalizeForId).filter(w => w.length > 0);
+  const first = words[0] || 'na';
+  const second = words[1] || first;
+  const namePart = (first.slice(0,2) + second.slice(0,2) + 'xxxx').slice(0,4);
+
+  const cleanRut = rutDigitsOnly(rut);
+  const body = cleanRut.length > 1 ? cleanRut.slice(0, -1) : cleanRut; // sin dígito verificador
+  const digitsPart = (body.length >= 3 ? body.slice(-3) : ('000' + body).slice(-3));
+
+  const base = namePart + digitsPart;
+
+  // Por si dos clientes generan el mismo código (nombres parecidos + últimos dígitos
+  // de RUT iguales), agregamos un sufijo numérico hasta encontrar uno libre.
+  let candidate = base;
+  for(let suffix = 2; suffix < 30; suffix++){
     try{
       const snap = await fsGetDoc(fsDoc(db, 'customers', candidate));
       if(!snap.exists()) return candidate;
-    }catch(e){ /* si falla la verificación, seguimos probando otro */ }
+    }catch(e){ return candidate; /* si falla la verificación, lo dejamos pasar */ }
+    candidate = base + suffix;
   }
-  return uid('nrc'); // resguardo por si no se consiguió un número libre
+  return uid('nrc'); // resguardo por si no se consiguió un código libre
 }
 
 function markSVG(size, color){
@@ -585,9 +614,9 @@ async function handleRecover(){
   }
 }
 
-async function registerCustomer(name, phone, email, birthday){
-  const id = await generateFriendlyId();
-  const cust = { id, name, phone, email, birthday: birthday || '', stamps:0, redeemed:0, createdAt: Date.now(), history:[], tasteProfile:{} };
+async function registerCustomer(name, phone, email, birthday, rut){
+  const id = await generateFriendlyId(name, rut);
+  const cust = { id, name, phone, email, birthday: birthday || '', rut: rut ? formatRut(rut) : '', stamps:0, redeemed:0, createdAt: Date.now(), history:[], tasteProfile:{} };
   await saveCustomer(cust);
   localStorage.setItem('norai-my-id', id);
   state.me = cust;
@@ -918,23 +947,12 @@ function renderRing(stamps){
   return html;
 }
 
-function renderBarcode(containerId, text){
+function renderQR(containerId, text){
   setTimeout(()=>{
     const el = document.getElementById(containerId);
-    if(el && window.JsBarcode){
-      try{
-        JsBarcode(el, text, {
-          format: 'CODE128',
-          lineColor: '#211F1A',
-          background: '#E7B94E',
-          width: 1.8,
-          height: 46,
-          displayValue: false,
-          margin: 6,
-        });
-      }catch(e){ console.error('No se pudo generar el código de barras', e); }
-    } else if(el){
-      console.error('JsBarcode no cargó — revisá que el script del CDN esté accesible.');
+    if(el && window.QRCode){
+      el.innerHTML = '';
+      new QRCode(el, { text, width: 128, height:128, colorDark:'#211F1A', colorLight:'#ffffff' });
     }
   }, 0);
 }
@@ -994,8 +1012,8 @@ function renderCustomerCard(cust, isOwn){
     } else if(cust.stamps === 0 && cust.redeemed > 0){
       html += '<div class="free-banner">Ya canjeaste '+cust.redeemed+' café(s) gratis. ¡Seguí sumando!</div>';
     }
-    const barcodeId = 'barcode-canvas-' + cust.id;
-    html += '<div class="qr-box"><div class="qr-frame"><svg id="'+barcodeId+'"></svg></div></div>';
+    const qrId = 'qr-canvas-' + cust.id;
+    html += '<div class="qr-box"><div class="qr-frame"><div id="'+qrId+'"></div></div></div>';
   }
   html += '<div class="id-line">ID '+cust.id+'</div>';
   if(isOwn && !cust.disabled){
@@ -1041,7 +1059,7 @@ function renderCustomerCard(cust, isOwn){
   html += '</div>';
 
   if(isOwn && !cust.disabled){
-    html += '<p class="note">Mostrá este código de barras en caja para que te busquen más rápido y sumen tu sello. En una versión conectada a Apple Wallet / Google Wallet, esta misma tarjeta viviría directamente en tu celular sin abrir esta página.</p>';
+    html += '<p class="note">Mostrá este código QR en caja para que sumen tu sello. En una versión conectada a Apple Wallet / Google Wallet, esta misma tarjeta viviría directamente en tu celular sin abrir esta página.</p>';
     if(!cust.companyStatus){
       if(state.showCompanyForm){
         html += '<div class="field" style="margin-top:10px;"><label>Código de empresa</label>'
@@ -1062,7 +1080,7 @@ function renderCustomerCard(cust, isOwn){
   }
 
   if(!cust.disabled){
-    renderBarcode('barcode-canvas-' + cust.id, cust.id);
+    renderQR('qr-canvas-' + cust.id, 'NORAI:' + cust.id);
   }
   return html;
 }
@@ -1146,6 +1164,7 @@ function render(){
       html += '<h1 class="hero">Sumate al club</h1>';
       html += '<p class="sub">Registrate una vez y acumulá un sello por cada café. Al llegar a '+STAMPS_GOAL+', el próximo va por nuestra cuenta.</p>';
       html += '<div class="field"><label>Nombre</label><input id="reg-name" placeholder="Tu nombre"></div>';
+      html += '<div class="field"><label>RUT</label><input id="reg-rut" placeholder="Ej: 16.142.935-K"></div>';
       html += '<div class="field"><label>Teléfono</label><input id="reg-phone" placeholder="+569 1234 5678" value="+569 "></div>';
       html += '<div class="field"><label>Email</label><input id="reg-email" placeholder="tu@email.com"></div>';
       html += '<div class="field"><label>Fecha de nacimiento</label><div class="bday-row">'
@@ -1808,6 +1827,24 @@ function formatRut(raw){
   return withDots + '-' + verifier;
 }
 
+// Validación estándar de RUT chileno (módulo 11), para evitar generar el ID a partir
+// de un RUT mal tipeado.
+function isValidRut(raw){
+  const clean = raw ? raw.toString().toUpperCase().replace(/[^0-9K]/g, '') : '';
+  if(clean.length < 2) return false;
+  const verifier = clean.slice(-1);
+  const body = clean.slice(0, -1);
+  if(!/^[0-9]+$/.test(body)) return false;
+  let sum = 0, mult = 2;
+  for(let i = body.length - 1; i >= 0; i--){
+    sum += parseInt(body[i], 10) * mult;
+    mult = mult === 7 ? 2 : mult + 1;
+  }
+  const rest = 11 - (sum % 11);
+  const expected = rest === 11 ? '0' : rest === 10 ? 'K' : String(rest);
+  return expected === verifier;
+}
+
 function toggleCompanyEditForm(id){
   state.editingCompanyId = id;
   if(id){
@@ -2004,6 +2041,7 @@ function sendPromo(){
 
 async function handleRegister(){
   const name = document.getElementById('reg-name').value.trim();
+  const rut = document.getElementById('reg-rut').value.trim();
   const phone = document.getElementById('reg-phone').value.trim();
   const email = document.getElementById('reg-email').value.trim().toLowerCase();
   const bDay = document.getElementById('reg-bday-day').value;
@@ -2012,6 +2050,8 @@ async function handleRegister(){
   const birthday = (bDay && bMonth && bYear) ? (bYear + '-' + String(bMonth).padStart(2,'0') + '-' + String(bDay).padStart(2,'0')) : '';
   const consent = document.getElementById('reg-consent').checked;
   if(!name){ showToast('Ingresá tu nombre'); return; }
+  if(!rut){ showToast('Ingresá tu RUT'); return; }
+  if(!isValidRut(rut)){ showToast('Ese RUT no es válido, revisalo.'); return; }
   if(!consent){ showToast('Necesitamos tu autorización para continuar'); return; }
 
   try{
@@ -2031,7 +2071,7 @@ async function handleRegister(){
     return;
   }
 
-  await registerCustomer(name, phone, email, birthday);
+  await registerCustomer(name, phone, email, birthday, rut);
 }
 
 async function resetMe(){

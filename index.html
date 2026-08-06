@@ -448,13 +448,13 @@ const STAMPS_GOAL = 5;
 // Se muestra abajo de todo en la app para poder confirmar, desde el celular,
 // que Netlify ya terminó de desplegar la versión que acabás de subir
 // (compará lo que ves acá con la fecha/etiqueta que le pusiste al subir el archivo).
-const APP_VERSION = '2026-08-06 · código de barras más chico + ID en blanco debajo';
+const APP_VERSION = '2026-08-06 · IDs de 5 dígitos + búsqueda robusta para lector de código de barras';
 
 function uid(prefix){ return prefix + '-' + Math.random().toString(36).slice(2,9); }
 
 async function generateFriendlyId(){
   for(let i=0; i<25; i++){
-    const candidate = String(Math.floor(100000 + Math.random()*900000)); // 6 dígitos, fácil de teclear
+    const candidate = String(Math.floor(10000 + Math.random()*90000)); // 5 dígitos, fácil de teclear
     try{
       const snap = await fsGetDoc(fsDoc(db, 'customers', candidate));
       if(!snap.exists()) return candidate;
@@ -1076,6 +1076,34 @@ function restoreFocus(focusInfo){
   }
 }
 
+// Los lectores de código de barras "escriben" muy rápido (como si tipearan a máxima
+// velocidad). Si renderizamos toda la app en CADA letra, se puede perder el foco del
+// campo a mitad de la lectura. Por eso, mientras alguien tipea o escanea, esperamos
+// un instante sin actividad antes de volver a renderizar la lista filtrada — el input
+// ya muestra lo que se escribió/escaneó de forma nativa, sin necesitar re-render.
+let searchDebounceTimer = null;
+function debouncedRender(){
+  clearTimeout(searchDebounceTimer);
+  searchDebounceTimer = setTimeout(render, 150);
+}
+
+// La mayoría de los lectores de código de barras mandan un "Enter" apenas terminan de
+// escanear. Lo aprovechamos: si el texto escaneado coincide exactamente con el ID de
+// un cliente, lo abrimos directo — sin esperar el debounce ni que el cajero toque nada.
+function staffSearchKeydown(event){
+  if(event.key !== 'Enter') return;
+  event.preventDefault();
+  clearTimeout(searchDebounceTimer);
+  const needle = (state.staffSearch || '').trim();
+  const exact = state.allCustomers.find(c => c.id === needle);
+  if(exact){
+    state.staffSearch = '';
+    selectCustomer(exact.id);
+  } else {
+    render();
+  }
+}
+
 function render(){
   const app = document.getElementById('app');
   const active = document.activeElement;
@@ -1150,7 +1178,7 @@ function render(){
       html += '<div class="empty-state" style="padding:40px 20px;">🔒 Iniciá sesión como administrador en la pestaña "Personal" para ver esta información.</div>';
     } else {
 
-    html += '<div class="field" style="margin-bottom:14px;"><input id="preview-search" placeholder="Buscar por nombre, teléfono, email o ID..." value="'+(state.previewSearch||'').replace(/"/g,'&quot;')+'" oninput="state.previewSearch=this.value; render();"></div>';
+    html += '<div class="field" style="margin-bottom:14px;"><input id="preview-search" placeholder="Buscar por nombre, teléfono, email o ID..." value="'+(state.previewSearch||'').replace(/"/g,'&quot;')+'" oninput="state.previewSearch=this.value; debouncedRender();"></div>';
 
     const filteredPreview = state.allCustomers.filter(c => matchesSearch(c, state.previewSearch));
     html += '<div class="section-label">Clientes registrados ('+filteredPreview.length+(state.previewSearch ? ' de '+state.allCustomers.length : '')+')</div>';
@@ -1212,7 +1240,7 @@ function render(){
       html += '<div class="empty-state" style="padding:40px 20px;">🔒 Iniciá sesión como administrador arriba para ver los clientes registrados y poder sumarles sellos por sus compras.</div>';
     } else {
 
-    html += '<div class="field" style="margin-bottom:14px;"><input id="staff-search" placeholder="Buscar por nombre, teléfono, email o ID..." value="'+(state.staffSearch||'').replace(/"/g,'&quot;')+'" oninput="state.staffSearch=this.value; render();"></div>';
+    html += '<div class="field" style="margin-bottom:14px;"><input id="staff-search" placeholder="Buscar por nombre, teléfono, email o ID..." value="'+(state.staffSearch||'').replace(/"/g,'&quot;')+'" oninput="state.staffSearch=this.value; debouncedRender();" onkeydown="staffSearchKeydown(event)"></div>';
 
     const filteredStaff = state.allCustomers.filter(c => matchesSearch(c, state.staffSearch));
     html += '<div class="section-label">Clientes registrados ('+filteredStaff.length+(state.staffSearch ? ' de '+state.allCustomers.length : '')+')</div>';
@@ -1447,7 +1475,7 @@ function render(){
             }
 
             html += '<div class="field" style="margin-top:12px; margin-bottom:8px;"><label>Agregar cliente a esta empresa</label>'
-              + '<input id="add-company-client-search" placeholder="Buscar por nombre, teléfono, email o ID..." value="'+(state.addCompanyClientSearch||'').replace(/"/g,'&quot;')+'" oninput="state.addCompanyClientSearch=this.value; render();"></div>';
+              + '<input id="add-company-client-search" placeholder="Buscar por nombre, teléfono, email o ID..." value="'+(state.addCompanyClientSearch||'').replace(/"/g,'&quot;')+'" oninput="state.addCompanyClientSearch=this.value; debouncedRender();"></div>';
 
             const q = (state.addCompanyClientSearch||'').trim();
             if(q){

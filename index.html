@@ -4,15 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Norāi Café Club</title>
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<link rel="icon" type="image/png" href="/favicon-32.png">
-<link rel="manifest" href="/manifest.json">
-<meta name="theme-color" content="#3E4234">
-<meta name="apple-mobile-web-app-title" content="Norāi Café Club">
-<meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Work+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/JsBarcode/3.11.5/JsBarcode.all.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <style>
   :root{
@@ -152,7 +146,8 @@
   }
 
   .qr-box{ display:flex; justify-content:center; margin: 18px 0 6px; position:relative; z-index:1; }
-  .qr-frame{ background:#FFFFFF; padding:12px; border-radius:14px; }
+  .qr-frame{ background:#FFFFFF; padding:14px 10px; border-radius:14px; width:100%; max-width:280px; display:flex; justify-content:center; }
+  .qr-frame svg{ width:100%; height:auto; max-width:260px; }
   .id-line{ text-align:center; font-family:'JetBrains Mono'; font-size:0.68rem; color:rgba(251,249,244,0.5); letter-spacing:0.05em; margin-top:8px; position:relative; z-index:1; }
 
   .card-address{
@@ -175,8 +170,8 @@
   .ios-tip{ margin-top:10px; text-align:right; }
   .ios-tip summary{
     display:inline-block; list-style:none; cursor:pointer;
-    font-family:'Work Sans'; font-size:0.68rem; color:#FFFFFF;
-    opacity:0.95; text-decoration:underline; text-decoration-style:dotted;
+    font-family:'Work Sans'; font-size:0.68rem; color:var(--muted);
+    opacity:0.75; text-decoration:underline; text-decoration-style:dotted;
   }
   .ios-tip summary::-webkit-details-marker{ display:none; }
   .ios-tip-body{
@@ -318,7 +313,7 @@ const firebaseConfig = {
    }
 */
 
-let db, fsDoc, fsGetDoc, fsSetDoc, fsGetDocs, fsCollection, fsQuery, fsWhere, fsDeleteDoc, fsOnSnapshot;
+let db, fsDoc, fsGetDoc, fsSetDoc, fsGetDocs, fsCollection, fsQuery, fsWhere;
 let auth, authSignInEmail, authSignInGoogle, authSignOut, GoogleProvider;
 
 async function initFirebase(){
@@ -333,8 +328,8 @@ async function initFirebase(){
     const authMod = await import("https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js");
     const app = initializeApp(firebaseConfig);
     db = fs.getFirestore(app);
-    fsDoc = fs.doc; fsGetDoc = fs.getDoc; fsSetDoc = fs.setDoc; fsDeleteDoc = fs.deleteDoc;
-    fsGetDocs = fs.getDocs; fsCollection = fs.collection; fsOnSnapshot = fs.onSnapshot;
+    fsDoc = fs.doc; fsGetDoc = fs.getDoc; fsSetDoc = fs.setDoc;
+    fsGetDocs = fs.getDocs; fsCollection = fs.collection;
     fsQuery = fs.query; fsWhere = fs.where;
 
     auth = authMod.getAuth(app);
@@ -347,23 +342,16 @@ async function initFirebase(){
       if(user && ADMIN_EMAILS.map(e=>e.toLowerCase()).includes((user.email||'').toLowerCase())){
         state.isAdmin = true;
         state.adminEmail = user.email;
-        render();
-        // Las reglas de Firestore ahora exigen estar logueado como admin para listar
-        // clientes y empresas; apenas se confirma el login, dejamos todo escuchando en vivo.
-        startAdminRealtimeListeners();
-        return;
       } else if(user){
         // Se autenticó con Firebase pero no está en la lista de administradores permitidos
         state.isAdmin = false;
         state.adminEmail = null;
-        stopAdminRealtimeListeners();
         showToast('Esta cuenta no tiene permisos de administrador');
         await authSignOut(auth);
         return;
       } else {
         state.isAdmin = false;
         state.adminEmail = null;
-        stopAdminRealtimeListeners();
       }
       render();
     });
@@ -384,13 +372,6 @@ let state = {
   screen: 'loading', // loading | register | recover | card
   recoverWarning: '',
   recovering: false,
-  recoverStep: 'phone', // 'phone' | 'code'
-  recoverPendingCustomer: null,
-  recoverCodeInput: '',
-  recoverCodeWarning: '',
-  sendingCode: false,
-  verifyingCode: false,
-  resendCooldown: 0,
   me: null, // {id, name, phone, email, stamps, redeemed}
   allCustomers: [],
   selectedCustomerId: null,
@@ -434,16 +415,19 @@ let state = {
   companyRutInput: '',
   showCompanyForm: false,
   expandedCompanyId: null,
-  showCompaniesPanel: false,
-  showCreateCompanyForm: false,
-  showPromoPanel: false,
-  deletedCompanies: [],
   addCompanyClientSearch: '',
   editingCompanyId: null,
   editCompanyName: '',
   editCompanyDiscount: '',
   expandedCompanyClientId: null,
   editClientRut: '',
+  forcingCustomerId: null,
+  forceResponsable: '',
+  forceReceiptValue: '',
+  forceWarning: '',
+  forceLookingUp: false,
+  forcedBy: '',
+  forcedVerified: false,
 };
 
 // PIN de administrador para esta demo. En producción esto debe validarse
@@ -459,6 +443,12 @@ const GOOGLE_REVIEW_URL = 'https://search.google.com/local/writereview?placeid=C
 // Cantidad de sellos necesarios para el café gratis.
 // Bajado a 5 temporalmente para pruebas — volver a 10 (o lo que definan) cuando esté decidido.
 const STAMPS_GOAL = 5;
+
+// Versión de la app: cambiá este texto cada vez que subas un archivo nuevo a GitHub.
+// Se muestra abajo de todo en la app para poder confirmar, desde el celular,
+// que Netlify ya terminó de desplegar la versión que acabás de subir
+// (compará lo que ves acá con la fecha/etiqueta que le pusiste al subir el archivo).
+const APP_VERSION = '2026-08-06 · código de barras + sello forzado con responsable';
 
 function uid(prefix){ return prefix + '-' + Math.random().toString(36).slice(2,9); }
 
@@ -490,118 +480,36 @@ function sealSVG(size, fill, textColor){
     + '</svg>';
 }
 
-let myCardUnsubscribe = null;
-
-function startMyCardListener(id){
-  if(myCardUnsubscribe){ myCardUnsubscribe(); myCardUnsubscribe = null; }
-  myCardUnsubscribe = fsOnSnapshot(fsDoc(db, 'customers', id), async (snap)=>{
-    if(!snap.exists()){
-      localStorage.removeItem('norai-my-id');
-      state.me = null;
-      state.screen = 'register';
-      render();
-      return;
-    }
-    const data = { id, ...snap.data() };
-    if(data.companyStatus === 'approved' && data.companyCode){
-      try{
-        const coSnap = await fsGetDoc(fsDoc(db, 'companies', data.companyCode));
-        data.company = coSnap.exists() ? { id: coSnap.id, ...coSnap.data() } : null;
-      }catch(e){ data.company = null; }
-    }
-    state.me = data;
-    if(state.screen === 'loading') state.screen = 'card';
-    render();
-  }, (err)=>{
-    console.error(err);
-    // Si la escucha en vivo falla (permisos, red, etc.), no dejamos la pantalla
-    // trabada en "Cargando...": mostramos la tarjeta guardada si ya la teníamos,
-    // o el registro si es la primera vez.
-    if(!state.me){
-      state.screen = 'register';
-      render();
-    }
-  });
-}
-
 async function loadMe(){
   try{
     const myId = localStorage.getItem('norai-my-id');
     if(myId){
-      startMyCardListener(myId);
-      setTimeout(()=>{
-        if(state.screen === 'loading'){
-          state.screen = 'register';
-          render();
+      const snap = await fsGetDoc(fsDoc(db, 'customers', myId));
+      if(snap.exists()){
+        state.me = { id: myId, ...snap.data() };
+        if(state.me.companyStatus === 'approved' && state.me.companyCode){
+          try{
+            const coSnap = await fsGetDoc(fsDoc(db, 'companies', state.me.companyCode));
+            state.me.company = coSnap.exists() ? { id: coSnap.id, ...coSnap.data() } : null;
+          }catch(e){ state.me.company = null; }
         }
-      }, 8000);
-      return;
+        state.screen = 'card';
+        render();
+        return;
+      }
     }
   }catch(e){ console.error(e); }
   state.screen = 'register';
   render();
 }
 
-let customersUnsubscribe = null;
-let companiesUnsubscribe = null;
-let deletedCompaniesUnsubscribe = null;
-
-// Mientras el admin esté logueado, dejamos "escuchando" en vivo los clientes y
-// empresas: cualquier cambio (nuevo cliente, solicitud de empresa, sello sumado
-// desde otro dispositivo, etc.) se refleja solo, sin recargar la pestaña.
-function startAdminRealtimeListeners(){
-  stopAdminRealtimeListeners();
-  customersUnsubscribe = fsOnSnapshot(fsCollection(db, 'customers'), (snap)=>{
-    state.allCustomers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    backfillCustomerIndexes(state.allCustomers);
-    render();
-  }, (err)=>{ console.error(err); });
-
-  companiesUnsubscribe = fsOnSnapshot(fsCollection(db, 'companies'), (snap)=>{
-    state.allCompanies = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    render();
-  }, (err)=>{ console.error(err); });
-
-  deletedCompaniesUnsubscribe = fsOnSnapshot(fsCollection(db, 'deletedCompanies'), (snap)=>{
-    state.deletedCompanies = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (b.deletedAt||0) - (a.deletedAt||0));
-    render();
-  }, (err)=>{ console.error(err); });
-}
-
-function stopAdminRealtimeListeners(){
-  if(customersUnsubscribe){ customersUnsubscribe(); customersUnsubscribe = null; }
-  if(companiesUnsubscribe){ companiesUnsubscribe(); companiesUnsubscribe = null; }
-  if(deletedCompaniesUnsubscribe){ deletedCompaniesUnsubscribe(); deletedCompaniesUnsubscribe = null; }
-}
-
 async function loadAllCustomers(){
   try{
     const snap = await fsGetDocs(fsCollection(db, 'customers'));
     state.allCustomers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    backfillCustomerIndexes(state.allCustomers); // no bloquea el render, corre en segundo plano
   }catch(e){
     console.error(e);
     state.allCustomers = [];
-  }
-}
-
-// Clientes registrados antes de que existiera phoneIndex/emailIndex no tienen esos
-// documentos todavía, así que no se podrían recuperar por correo. Como el admin sí
-// puede listar y escribir, aprovechamos cada carga del panel de Personal para
-// completar los índices que falten, en silencio.
-async function backfillCustomerIndexes(customers){
-  if(!state.isAdmin) return;
-  for(const c of customers){
-    try{
-      if(c.phone){
-        const s = await fsGetDoc(fsDoc(db, 'phoneIndex', c.phone));
-        if(!s.exists()) await fsSetDoc(fsDoc(db, 'phoneIndex', c.phone), { customerId: c.id });
-      }
-      if(c.email){
-        const s2 = await fsGetDoc(fsDoc(db, 'emailIndex', c.email));
-        if(!s2.exists()) await fsSetDoc(fsDoc(db, 'emailIndex', c.email), { customerId: c.id });
-      }
-    }catch(e){ console.error(e); }
   }
 }
 
@@ -631,33 +539,12 @@ function showToast(msg){
   setTimeout(()=>{ state.toast = null; }, 2500);
 }
 
-function maskEmail(email){
-  if(!email || email.indexOf('@') === -1) return '';
-  const [user, domain] = email.split('@');
-  const shown = user.slice(0, Math.min(2, user.length));
-  return shown + '***@' + domain;
-}
-
-function generateSixDigitCode(){
-  return String(Math.floor(100000 + Math.random()*900000));
-}
-
-async function sendRecoveryCodeEmail(email, code, name){
-  const res = await fetch('/.netlify/functions/send-recovery-code', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, code, name })
-  });
-  const data = await res.json();
-  if(!data.ok) throw new Error(data.error || 'No se pudo enviar el correo');
-}
-
 async function handleRecover(){
-  const emailInput = document.getElementById('recover-email');
-  const email = (emailInput ? emailInput.value : '').trim().toLowerCase();
+  const phoneInput = document.getElementById('recover-phone');
+  const phone = (phoneInput ? phoneInput.value : '').trim();
 
-  if(!email){
-    state.recoverWarning = 'Ingresá el correo con el que te registraste.';
+  if(!phone || phone === '+569 '){
+    state.recoverWarning = 'Ingresá el teléfono con el que te registraste.';
     render();
     return;
   }
@@ -667,27 +554,29 @@ async function handleRecover(){
   render();
 
   try{
-    const idxSnap = await fsGetDoc(fsDoc(db, 'emailIndex', email));
+    const q = fsQuery(fsCollection(db, 'customers'), fsWhere('phone', '==', phone));
+    const snap = await fsGetDocs(q);
     state.recovering = false;
 
-    if(!idxSnap.exists()){
-      state.recoverWarning = 'No encontramos ninguna tarjeta con ese correo. Fijate que esté bien escrito, o registrate como cliente nuevo.';
+    if(snap.empty){
+      state.recoverWarning = 'No encontramos ninguna tarjeta con ese teléfono. Fijate que esté bien escrito, o registrate como cliente nuevo.';
       render();
       return;
     }
 
-    const customerId = idxSnap.data().customerId;
-    const custSnap = await fsGetDoc(fsDoc(db, 'customers', customerId));
-    if(!custSnap.exists()){
-      state.recoverWarning = 'No encontramos ninguna tarjeta con ese correo. Fijate que esté bien escrito, o registrate como cliente nuevo.';
-      render();
-      return;
+    const docSnap = snap.docs[0];
+    const cust = { id: docSnap.id, ...docSnap.data() };
+    if(cust.companyStatus === 'approved' && cust.companyCode){
+      try{
+        const coSnap = await fsGetDoc(fsDoc(db, 'companies', cust.companyCode));
+        cust.company = coSnap.exists() ? { id: coSnap.id, ...coSnap.data() } : null;
+      }catch(e){ /* ignore */ }
     }
 
-    const cust = { id: custSnap.id, ...custSnap.data() };
-
-    state.recoverPendingCustomer = cust;
-    await requestNewRecoveryCode();
+    localStorage.setItem('norai-my-id', cust.id);
+    state.me = cust;
+    state.screen = 'card';
+    render();
   }catch(e){
     console.error(e);
     state.recovering = false;
@@ -696,140 +585,83 @@ async function handleRecover(){
   }
 }
 
-async function requestNewRecoveryCode(){
-  const cust = state.recoverPendingCustomer;
-  if(!cust) return;
-  state.sendingCode = true;
-  state.recoverCodeWarning = '';
-  render();
-
-  try{
-    const code = generateSixDigitCode();
-    const expiresAt = Date.now() + 10*60*1000; // 10 minutos
-    await fsSetDoc(fsDoc(db, 'customers', cust.id), { recoveryCode: { code, expiresAt, attempts: 0 } }, { merge: true });
-    await sendRecoveryCodeEmail(cust.email, code, cust.name);
-    state.sendingCode = false;
-    state.recoverStep = 'code';
-    state.recoverCodeInput = '';
-    state.resendCooldown = 30;
-    const tick = setInterval(()=>{
-      state.resendCooldown = Math.max(0, state.resendCooldown - 1);
-      if(state.resendCooldown === 0) clearInterval(tick);
-      render();
-    }, 1000);
-    render();
-  }catch(e){
-    console.error(e);
-    state.sendingCode = false;
-    state.recoverWarning = 'No pudimos enviar el código a tu correo. Probá de nuevo en unos segundos.';
-    state.recoverStep = 'phone';
-    render();
-  }
-}
-
-async function verifyRecoveryCode(){
-  const cust = state.recoverPendingCustomer;
-  if(!cust) return;
-  const input = (state.recoverCodeInput||'').trim();
-  if(!input){
-    state.recoverCodeWarning = 'Ingresá el código de 6 dígitos que te enviamos por correo.';
-    render();
-    return;
-  }
-
-  state.verifyingCode = true;
-  state.recoverCodeWarning = '';
-  render();
-
-  try{
-    const snap = await fsGetDoc(fsDoc(db, 'customers', cust.id));
-    if(!snap.exists()){
-      state.verifyingCode = false;
-      state.recoverCodeWarning = 'No pudimos validar el código. Probá de nuevo.';
-      render();
-      return;
-    }
-    const fresh = { id: cust.id, ...snap.data() };
-    const rc = fresh.recoveryCode;
-
-    if(!rc || Date.now() > rc.expiresAt){
-      state.verifyingCode = false;
-      state.recoverCodeWarning = 'Ese código venció. Pedí uno nuevo.';
-      render();
-      return;
-    }
-    if((rc.attempts||0) >= 5){
-      state.verifyingCode = false;
-      state.recoverCodeWarning = 'Demasiados intentos. Pedí un código nuevo.';
-      render();
-      return;
-    }
-    if(input !== rc.code){
-      await fsSetDoc(fsDoc(db, 'customers', cust.id), { recoveryCode: { ...rc, attempts: (rc.attempts||0) + 1 } }, { merge: true });
-      state.verifyingCode = false;
-      state.recoverCodeWarning = 'Código incorrecto. Te quedan ' + (4 - (rc.attempts||0)) + ' intento(s).';
-      render();
-      return;
-    }
-
-    // Código correcto: limpiamos el código usado y entramos
-    await fsSetDoc(fsDoc(db, 'customers', cust.id), { recoveryCode: null }, { merge: true });
-    if(fresh.companyStatus === 'approved' && fresh.companyCode){
-      try{
-        const coSnap = await fsGetDoc(fsDoc(db, 'companies', fresh.companyCode));
-        fresh.company = coSnap.exists() ? { id: coSnap.id, ...coSnap.data() } : null;
-      }catch(e){ /* ignore */ }
-    }
-
-    localStorage.setItem('norai-my-id', fresh.id);
-    state.me = fresh;
-    state.screen = 'card';
-    state.recoverStep = 'phone';
-    state.recoverPendingCustomer = null;
-    state.recoverCodeInput = '';
-    state.verifyingCode = false;
-    startMyCardListener(fresh.id);
-    render();
-  }catch(e){
-    console.error(e);
-    state.verifyingCode = false;
-    state.recoverCodeWarning = 'No se pudo conectar para validar el código. Probá de nuevo.';
-    render();
-  }
-}
-
-function cancelRecoveryCode(){
-  state.recoverStep = 'phone';
-  state.recoverPendingCustomer = null;
-  state.recoverCodeInput = '';
-  state.recoverCodeWarning = '';
-  render();
-}
-
 async function registerCustomer(name, phone, email, birthday){
   const id = await generateFriendlyId();
   const cust = { id, name, phone, email, birthday: birthday || '', stamps:0, redeemed:0, createdAt: Date.now(), history:[], tasteProfile:{} };
   await saveCustomer(cust);
-  if(phone){ try{ await fsSetDoc(fsDoc(db, 'phoneIndex', phone), { customerId: id }); }catch(e){ console.error(e); } }
-  if(email){ try{ await fsSetDoc(fsDoc(db, 'emailIndex', email), { customerId: id }); }catch(e){ console.error(e); } }
   localStorage.setItem('norai-my-id', id);
   state.me = cust;
   state.screen = 'card';
-  startMyCardListener(id);
   render();
-  showToast('¡Listo! Tu tarjeta se creó correctamente 🎉');
 }
 
-async function forceStamp(customerId){
-  // TEMPORAL: solo para pruebas mientras no tenemos boletas reales en Toteat.
-  // Saca este botón (y esta función) cuando ya no lo necesitemos.
-  state.receiptValue = 'PRUEBA-' + Date.now();
-  state.productsValue = 'Sello manual (prueba)';
-  state.amountValue = '';
-  state.lastProductDetails = null;
-  state.lastMainCoffee = null;
+function toggleForceForm(customerId){
+  state.forcingCustomerId = state.forcingCustomerId === customerId ? null : customerId;
+  state.forceResponsable = '';
+  state.forceReceiptValue = '';
+  state.forceWarning = '';
+  render();
+}
+
+// Sello forzado manualmente: se usa cuando la búsqueda automática en Toteat no funciona.
+// Igual pide N° de boleta y responsable, e igual intenta corroborar contra Toteat;
+// si Toteat no responde, el sello queda marcado como "forzado / sin verificar" para
+// que un administrador lo revise después, junto con el nombre de quien lo forzó.
+async function confirmForceStamp(customerId){
+  const responsable = (state.forceResponsable||'').trim();
+  const receipt = (state.forceReceiptValue||'').trim();
+
+  if(!responsable){ state.forceWarning = 'Ingresá el nombre de quien está forzando este sello.'; render(); return; }
+  if(!receipt){ state.forceWarning = 'Ingresá el N° de boleta.'; render(); return; }
+
+  const usage = findReceiptUsage(receipt);
+  if(usage){
+    state.forceWarning = usage.customer.id === customerId
+      ? 'Esa boleta (N° ' + receipt + ') ya fue ingresada para ' + usage.customer.name + '.'
+      : 'Esa boleta (N° ' + receipt + ') ya fue ingresada en la tarjeta de ' + usage.customer.name + ' (ID #' + usage.customer.id + '). No se puede volver a usar.';
+    render();
+    return;
+  }
+
+  state.forceLookingUp = true;
+  state.forceWarning = '';
+  render();
+
+  let verified = false;
+  try{
+    const res = await fetch('/.netlify/functions/lookup-receipt?receipt=' + encodeURIComponent(receipt));
+    const data = await res.json();
+    if(data.ok){
+      state.productsValue = (data.products || []).join(', ');
+      state.amountValue = data.amount != null ? String(data.amount) : '';
+      state.lastProductDetails = data.productDetails || null;
+      state.lastMainCoffee = data.mainCoffee || null;
+      verified = true;
+    } else {
+      state.productsValue = 'Forzado — sin verificar en Toteat (' + (data.error || 'no se pudo validar') + ')';
+      state.amountValue = '';
+      state.lastProductDetails = null;
+      state.lastMainCoffee = null;
+    }
+  }catch(e){
+    console.error(e);
+    state.productsValue = 'Forzado — sin conexión con Toteat';
+    state.amountValue = '';
+    state.lastProductDetails = null;
+    state.lastMainCoffee = null;
+  }
+  state.forceLookingUp = false;
+
+  state.receiptValue = receipt;
   state.receiptWarning = '';
+  state.forcedBy = responsable;
+  state.forcedVerified = verified;
+
   await addStamp(customerId);
+
+  state.forcingCustomerId = null;
+  state.forceResponsable = '';
+  state.forceReceiptValue = '';
 }
 
 async function submitReceipt(customerId){
@@ -896,9 +728,11 @@ async function addStamp(customerId){
     return;
   }
 
-  const already = cust.history.some(h => h.receipt && h.receipt.toLowerCase() === receipt.toLowerCase());
-  if(already){
-    state.receiptWarning = 'Esa boleta (N° ' + receipt + ') ya fue usada para sumar un sello de ' + cust.name + '. Revisá antes de continuar.';
+  const usage = findReceiptUsage(receipt);
+  if(usage){
+    state.receiptWarning = usage.customer.id === cust.id
+      ? 'Esa boleta (N° ' + receipt + ') ya fue usada para sumar un sello de ' + cust.name + '. Revisá antes de continuar.'
+      : 'Esa boleta (N° ' + receipt + ') ya fue utilizada en la tarjeta de ' + usage.customer.name + ' (ID #' + usage.customer.id + '). No se puede volver a usar.';
     render();
     return;
   }
@@ -915,13 +749,23 @@ async function addStamp(customerId){
     if(co){ companyName = co.name; companyDiscountLabel = co.discount; }
   }
 
+  const historyEntry = { receipt, ts: Date.now(), products, amount, productDetails: state.lastProductDetails || null, mainCoffee: state.lastMainCoffee || null };
+  if(state.forcedBy){
+    historyEntry.forced = true;
+    historyEntry.forcedBy = state.forcedBy;
+    historyEntry.forcedVerified = !!state.forcedVerified;
+  }
+
   let justCompleted = false;
   if(hasCompanyDiscount){
-    cust.history.unshift({ receipt, ts: Date.now(), products, amount, productDetails: state.lastProductDetails || null, mainCoffee: state.lastMainCoffee || null, companyDiscount: true, companyName, companyDiscountLabel });
+    historyEntry.companyDiscount = true;
+    historyEntry.companyName = companyName;
+    historyEntry.companyDiscountLabel = companyDiscountLabel;
+    cust.history.unshift(historyEntry);
   } else {
     cust.stamps += 1;
     justCompleted = cust.stamps >= STAMPS_GOAL;
-    cust.history.unshift({ receipt, ts: Date.now(), products, amount, productDetails: state.lastProductDetails || null, mainCoffee: state.lastMainCoffee || null });
+    cust.history.unshift(historyEntry);
   }
   cust.history = cust.history.slice(0, 500);
   products.forEach(p=>{ cust.tasteProfile[p] = (cust.tasteProfile[p]||0) + 1; });
@@ -929,6 +773,8 @@ async function addStamp(customerId){
   await saveCustomer(cust);
   await loadAllCustomers();
   const coffeeLabel = state.lastMainCoffee ? ' — ' + state.lastMainCoffee.name + ' $' + state.lastMainCoffee.amount : '';
+  const wasForced = !!state.forcedBy;
+  const forcedLabel = wasForced ? ' (forzado por ' + state.forcedBy + (state.forcedVerified ? '' : ', sin verificar en Toteat') + ')' : '';
   state.receiptValue = '';
   state.productsValue = '';
   state.receiptWarning = '';
@@ -936,10 +782,12 @@ async function addStamp(customerId){
   state.amountValue = '';
   state.lastProductDetails = null;
   state.lastMainCoffee = null;
+  state.forcedBy = '';
+  state.forcedVerified = false;
   if(hasCompanyDiscount){
     showToast('Boleta registrada con descuento de empresa para ' + cust.name + ' — no suma sello.');
   } else {
-    showToast(justCompleted ? '¡'+cust.name+' completó sus '+STAMPS_GOAL+' sellos! Confirmá el canje cuando le entregues el café.' : 'Sello agregado a ' + cust.name + coffeeLabel + ' (boleta N° ' + receipt + ')');
+    showToast(justCompleted ? '¡'+cust.name+' completó sus '+STAMPS_GOAL+' sellos! Confirmá el canje cuando le entregues el café.' : 'Sello agregado a ' + cust.name + coffeeLabel + ' (boleta N° ' + receipt + ')' + forcedLabel);
   }
   if(state.me && state.me.id === customerId){ state.me = cust; }
   render();
@@ -966,6 +814,19 @@ async function redeemFree(customerId){
 function topTastes(cust, n){
   const profile = cust.tasteProfile || {};
   return Object.entries(profile).sort((a,b)=>b[1]-a[1]).slice(0, n||3).map(e=>e[0]);
+}
+
+// Busca si un N° de boleta ya fue ingresado antes, en la tarjeta de CUALQUIER cliente
+// (no solo la que se está editando ahora). Se usa tanto en el flujo normal como en el forzado.
+function findReceiptUsage(receipt){
+  const needle = (receipt||'').trim().toLowerCase();
+  if(!needle) return null;
+  for(const c of state.allCustomers){
+    const hist = c.history || [];
+    const hit = hist.find(h => (h.receipt||'').toLowerCase() === needle);
+    if(hit) return { customer: c, entry: hit };
+  }
+  return null;
 }
 
 function matchesSearch(c, q){
@@ -1057,12 +918,21 @@ function renderRing(stamps){
   return html;
 }
 
-function renderQR(containerId, text){
+function renderBarcode(containerId, text){
   setTimeout(()=>{
     const el = document.getElementById(containerId);
-    if(el && window.QRCode){
-      el.innerHTML = '';
-      new QRCode(el, { text, width: 128, height:128, colorDark:'#211F1A', colorLight:'#ffffff' });
+    if(el && window.JsBarcode){
+      try{
+        JsBarcode(el, text, {
+          format: 'CODE128',
+          lineColor: '#211F1A',
+          background: '#ffffff',
+          width: 2.4,
+          height: 70,
+          displayValue: false,
+          margin: 0,
+        });
+      }catch(e){ console.error('No se pudo generar el código de barras', e); }
     }
   }, 0);
 }
@@ -1108,7 +978,7 @@ function renderCustomerCard(cust, isOwn){
     + '<div class="tier">Nivel<b>'+tierLabel+'</b></div></div>';
 
   if(cust.companyStatus === 'approved' && cust.company && cust.company.active !== false && cust.companyEnabled !== false){
-    html += '<div class="free-banner" style="background:rgba(231,185,78,0.22); border-color:rgba(231,185,78,0.55); color:var(--ink);">🏢 Beneficio <b>'+cust.company.name+'</b>: '+cust.company.discount+'</div>';
+    html += '<div class="free-banner" style="background:rgba(231,185,78,0.22); border-color:rgba(231,185,78,0.55); color:var(--mustard);">🏢 Beneficio '+cust.company.name+': '+cust.company.discount+'</div>';
   } else if(cust.companyStatus === 'pending'){
     html += '<div class="free-banner">Tu código de empresa está en revisión.</div>';
   }
@@ -1122,8 +992,8 @@ function renderCustomerCard(cust, isOwn){
     } else if(cust.stamps === 0 && cust.redeemed > 0){
       html += '<div class="free-banner">Ya canjeaste '+cust.redeemed+' café(s) gratis. ¡Seguí sumando!</div>';
     }
-    const qrId = 'qr-canvas-' + cust.id;
-    html += '<div class="qr-box"><div class="qr-frame"><div id="'+qrId+'"></div></div></div>';
+    const barcodeId = 'barcode-canvas-' + cust.id;
+    html += '<div class="qr-box"><div class="qr-frame"><svg id="'+barcodeId+'"></svg></div></div>';
   }
   html += '<div class="id-line">ID '+cust.id+'</div>';
   if(isOwn && !cust.disabled){
@@ -1150,27 +1020,26 @@ function renderCustomerCard(cust, isOwn){
 
   const clientHist = (cust.history || []).slice().sort((a,b)=>b.ts-a.ts);
   html += '<div class="receipt-box" style="margin-top:16px;">';
-  html += '<div class="section-label" style="margin-top:0;">'+(isOwn ? 'Tus últimos 5 sellos' : 'Últimos 5 sellos de '+cust.name)+'</div>';
+  html += '<div class="section-label" style="margin-top:0;">'+(isOwn ? 'Tus sellos' : 'Sellos de '+cust.name)+'</div>';
   if(clientHist.length === 0){
     html += '<div class="history-empty">Todavía no '+(isOwn ? 'tenés' : 'tiene')+' sellos registrados'+(isOwn ? '. Pedí que te lo sumen en caja al retirar tu café.' : '.')+'</div>';
   } else {
-    clientHist.slice(0,5).forEach(h=>{
+    clientHist.slice(0,10).forEach(h=>{
       const d = new Date(h.ts);
       const when = d.toLocaleDateString()+' · '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
       if(h.redemption){
         html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--mustard-deep);">🎉 Café gratis</b></div>';
       } else if(h.companyDiscount){
-        html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--olive); white-space:nowrap;">🏢 '+(h.companyDiscountLabel || 'Con descuento')+'</b></div>';
+        html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--olive);">🏢 Con descuento</b></div>';
       } else {
-        const coffeeName = (h.mainCoffee && h.mainCoffee.name) ? h.mainCoffee.name : 'Café';
-        html += '<div class="history-item"><span>'+when+'</span><b>'+coffeeName+' ☕</b></div>';
+        html += '<div class="history-item"><span>'+when+'</span><b>Café ☕</b></div>';
       }
     });
   }
   html += '</div>';
 
   if(isOwn && !cust.disabled){
-    html += '<p class="note">Mostrá este código QR en caja para que sumen tu sello. En una versión conectada a Apple Wallet / Google Wallet, esta misma tarjeta viviría directamente en tu celular sin abrir esta página.</p>';
+    html += '<p class="note">Mostrá este código de barras en caja para que te busquen más rápido y sumen tu sello. En una versión conectada a Apple Wallet / Google Wallet, esta misma tarjeta viviría directamente en tu celular sin abrir esta página.</p>';
     if(!cust.companyStatus){
       if(state.showCompanyForm){
         html += '<div class="field" style="margin-top:10px;"><label>Código de empresa</label>'
@@ -1191,7 +1060,7 @@ function renderCustomerCard(cust, isOwn){
   }
 
   if(!cust.disabled){
-    renderQR('qr-canvas-' + cust.id, 'NORAI:' + cust.id);
+    renderBarcode('barcode-canvas-' + cust.id, cust.id);
   }
   return html;
 }
@@ -1205,21 +1074,7 @@ function restoreFocus(focusInfo){
   }
 }
 
-// Varias actualizaciones (login, escuchas en vivo de clientes/empresas, etc.)
-// pueden llegar casi al mismo tiempo. En vez de redibujar toda la pantalla por
-// cada una (lo que se ve como un parpadeo), las juntamos y solo repintamos una
-// vez por cuadro de animación del navegador.
-let renderPending = false;
 function render(){
-  if(renderPending) return;
-  renderPending = true;
-  requestAnimationFrame(()=>{
-    renderPending = false;
-    renderNow();
-  });
-}
-
-function renderNow(){
   const app = document.getElementById('app');
   const active = document.activeElement;
   const focusInfo = (active && app.contains(active) && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA'))
@@ -1240,7 +1095,7 @@ function renderNow(){
   const staffDevice = isStaffDevice();
   if(!staffDevice && state.mode !== 'customer'){ state.mode = 'customer'; }
 
-  html += '<div class="topnav"><div class="brand" onclick="handleBrandTap()" style="cursor:pointer;">'+markSVG(26,'#F2EEE3')
+  html += '<div class="topnav"><div class="brand">'+markSVG(26,'#F2EEE3')
     + '<div><div class="word">NOR\u0100I</div><div class="tag">Café Club</div></div></div>';
   if(staffDevice){
     html += '<div class="mode-toggle">'
@@ -1272,34 +1127,14 @@ function renderNow(){
       html += '<button class="btn" onclick="handleRegister()">Crear mi tarjeta</button>';
       html += '<p class="note" style="text-align:center; margin-top:14px;"><a href="javascript:void(0)" onclick="state.screen=\'recover\'; state.recoverWarning=\'\'; render();" style="color:var(--mustard); text-decoration:underline;">¿Ya tenés una tarjeta? Recuperala acá</a></p>';
     } else if(state.screen === 'recover'){
-      if(state.recoverStep === 'code' && state.recoverPendingCustomer){
-        const maskedEmail = maskEmail(state.recoverPendingCustomer.email);
-        html += '<h1 class="hero">Revisá tu correo</h1>';
-        html += '<p class="sub">Te mandamos un código de 6 dígitos a <b>'+maskedEmail+'</b> para confirmar que sos vos. Vence en 10 minutos.</p>';
-        html += '<div class="field"><label>Código de verificación</label>'
-          + '<input id="recover-code" inputmode="numeric" maxlength="6" placeholder="123456" value="'+(state.recoverCodeInput||'').replace(/"/g,'&quot;')+'" oninput="state.recoverCodeInput=this.value; state.recoverCodeWarning=\'\';"></div>';
-        if(state.recoverCodeWarning){
-          html += '<div class="warn-text">'+state.recoverCodeWarning+'</div>';
-        }
-        html += '<button class="btn" onclick="verifyRecoveryCode()">'+(state.verifyingCode ? 'Verificando...' : 'Confirmar código')+'</button>';
-        html += '<p class="note" style="text-align:center; margin-top:14px;">';
-        if(state.resendCooldown > 0){
-          html += 'Podés pedir otro código en '+state.resendCooldown+'s';
-        } else {
-          html += '<a href="javascript:void(0)" onclick="requestNewRecoveryCode()" style="color:var(--mustard); text-decoration:underline;">'+(state.sendingCode ? 'Enviando...' : 'Reenviar código')+'</a>';
-        }
-        html += '</p>';
-        html += '<p class="note" style="text-align:center;"><a href="javascript:void(0)" onclick="cancelRecoveryCode()" style="color:var(--muted-on-dark); text-decoration:underline;">Usar otro teléfono</a></p>';
-      } else {
-        html += '<h1 class="hero">Recuperar mi tarjeta</h1>';
-        html += '<p class="sub">Ingresá el correo con el que te registraste. Te vamos a mandar un código ahí mismo para confirmar que sos vos antes de mostrarte la tarjeta.</p>';
-        html += '<div class="field"><label>Correo</label><input id="recover-email" type="email" placeholder="tu@email.com"></div>';
-        if(state.recoverWarning){
-          html += '<div class="warn-text">'+state.recoverWarning+'</div>';
-        }
-        html += '<button class="btn" onclick="handleRecover()">'+((state.recovering||state.sendingCode) ? 'Enviando código...' : 'Buscar mi tarjeta')+'</button>';
-        html += '<p class="note" style="text-align:center; margin-top:14px;"><a href="javascript:void(0)" onclick="state.screen=\'register\'; state.recoverWarning=\'\'; render();" style="color:var(--mustard); text-decoration:underline;">Volver a registrarme</a></p>';
+      html += '<h1 class="hero">Recuperar mi tarjeta</h1>';
+      html += '<p class="sub">Ingresá el teléfono con el que te registraste y te devolvemos tu tarjeta con tus sellos, tal como estaba.</p>';
+      html += '<div class="field"><label>Teléfono</label><input id="recover-phone" placeholder="+569 1234 5678" value="+569 "></div>';
+      if(state.recoverWarning){
+        html += '<div class="warn-text">'+state.recoverWarning+'</div>';
       }
+      html += '<button class="btn" onclick="handleRecover()">'+(state.recovering ? 'Buscando...' : 'Buscar mi tarjeta')+'</button>';
+      html += '<p class="note" style="text-align:center; margin-top:14px;"><a href="javascript:void(0)" onclick="state.screen=\'register\'; state.recoverWarning=\'\'; render();" style="color:var(--mustard); text-decoration:underline;">Volver a registrarme</a></p>';
     } else if(state.screen === 'card'){
       html += renderCustomerCard(state.me, true);
     }
@@ -1354,18 +1189,12 @@ function renderNow(){
 
     html += '<div class="receipt-box" style="margin-bottom:18px;">';
     if(state.isAdmin){
-      const isDefaultDevice = (function(){ try{ return localStorage.getItem('norai-default-mode')==='staff'; }catch(e){ return false; } })();
       html += '<div class="who" style="margin-bottom:10px; display:flex; align-items:center; gap:8px;">'
         + '<span style="width:8px; height:8px; border-radius:50%; background:#4C7A4C; display:inline-block; flex-shrink:0;"></span>'
         + '<span><b>Conectado a la nube</b> como '+state.adminEmail+'</span></div>';
       html += '<div class="action-row">'
         + '<button class="btn secondary" onclick="openReportModal()">📊 Ver informes</button>'
         + '<button class="btn secondary" style="color:var(--danger); border-color:rgba(166,67,43,0.4);" onclick="exitAdmin()">Desconectar</button>'
-        + '</div>';
-      html += '<div class="action-row">'
-        + (isDefaultDevice
-            ? '<button class="btn secondary" onclick="clearThisDeviceAdminDefault()">✅ Este ícono ya abre directo en Personal</button>'
-            : '<button class="btn secondary" onclick="setThisDeviceAsAdminDefault()">📌 Fijar este dispositivo en modo Personal</button>')
         + '</div>';
     } else {
       html += '<div class="who">Iniciá sesión para acceder al panel.</div>';
@@ -1408,7 +1237,6 @@ function renderNow(){
           html += '<div class="mini-actions">'
             + '<button class="mini-btn" onclick="event.stopPropagation(); toggleAdminEdit(\''+c.id+'\')">Editar</button>'
             + '<button class="mini-btn '+(c.disabled?'':'danger')+'" onclick="event.stopPropagation(); toggleDisabled(\''+c.id+'\')">'+(c.disabled?'Habilitar':'Deshabilitar')+'</button>'
-            + '<button class="mini-btn danger" onclick="event.stopPropagation(); deleteCustomerAccount(\''+c.id+'\', \''+c.name.replace(/'/g,"\\'")+'\')">Borrar</button>'
             + '</div>';
         }
         html += '<div class="cstamps" onclick="selectCustomer(\''+c.id+'\')">'+Math.min(c.stamps, STAMPS_GOAL)+'/'+STAMPS_GOAL+((c.stamps>=STAMPS_GOAL && !c.disabled) ? '<div style="font-size:0.58rem; color:var(--mustard-deep); text-transform:uppercase; letter-spacing:0.02em; margin-top:2px;">🎉 Canjear</div>' : '')+'</div>';
@@ -1471,16 +1299,36 @@ function renderNow(){
               + '<input id="receipt-input" placeholder="Ej: 004582" value="'+(state.receiptValue||'').replace(/"/g,'&quot;')+'" oninput="state.receiptValue=this.value; state.receiptWarning=\'\';"></div>';
             html += '<p class="note" style="margin-top:0; margin-bottom:10px;">Al sumar, la app le pregunta a Toteat qué café(s) compró, el monto y valida que esa boleta esté pagada y sin nota de crédito — no hace falta tipear productos ni monto a mano.</p>';
             if(activeCompanyBenefit){
-              html += '<div style="background:rgba(231,185,78,0.22); border:1.5px solid var(--mustard); border-radius:14px; padding:14px 16px; margin-bottom:14px;">'
-                + '<div style="font-weight:700; font-size:0.9rem; color:var(--mustard-deep); margin-bottom:4px;">🏢 Esta boleta tiene descuento de empresa</div>'
-                + '<div style="font-size:0.82rem; color:var(--ink); line-height:1.5;">'+c.name+' tiene activo el descuento de <b>'+co.name+'</b> ('+co.discount+'). Esta compra <b>no suma sello</b> — los descuentos de empresa no se combinan con otras promociones. Para volver a sumar sellos, desactivá su beneficio desde "Empresas con descuento".</div>'
-                + '</div>';
+              html += '<div class="checkbox-row" style="margin-bottom:6px; align-items:flex-start;">'
+                + '<input type="checkbox" checked disabled style="margin-top:2px;">'
+                + '<span style="font-size:0.78rem;">Esta boleta tiene descuento de empresa aplicado (no suma sello — los descuentos de empresa no se combinan con otras promociones)</span></div>';
+              html += '<p class="note" style="margin-top:0; margin-bottom:10px;">'+c.name+' tiene activo el descuento de <b>'+co.name+'</b> ('+co.discount+'). Mientras esté activo, todas sus compras usan ese descuento y no suman sello. Para volver a sumar sellos, desactivá su beneficio desde "Empresas con descuento".</p>';
+            } else {
+              html += '<div class="checkbox-row" style="margin-bottom:10px; align-items:flex-start;">'
+                + '<input type="checkbox" id="receipt-company-discount" style="margin-top:2px;" '+(state.receiptCompanyDiscount?'checked':'')+' onchange="state.receiptCompanyDiscount=this.checked;">'
+                + '<span style="font-size:0.78rem;">Esta boleta tiene descuento de empresa aplicado (no suma sello — los descuentos de empresa no se combinan con otras promociones)</span></div>';
             }
             if(state.receiptWarning){
               html += '<div class="warn-text">'+state.receiptWarning+'</div>';
             }
             html += '<div class="action-row"><button class="btn" onclick="submitReceipt(\''+c.id+'\')">'+(state.lookingUpReceipt ? 'Buscando en Toteat...' : 'Buscar boleta y sumar sello')+'</button></div>';
-            html += '<div class="action-row"><button class="btn" style="background:transparent; border:1.5px dashed var(--muted); color:var(--muted);" onclick="forceStamp(\''+c.id+'\')">⚠️ Forzar sello (prueba, sin Toteat)</button></div>';
+
+            if(state.forcingCustomerId === c.id){
+              html += '<div class="customer-expand" style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--line);">';
+              html += '<p class="note" style="margin-top:0;">Usá esto solo si la búsqueda automática en Toteat no está funcionando. Igual se intenta corroborar la boleta; si Toteat no responde, el sello queda marcado como "sin verificar" para revisar después.</p>';
+              html += '<div class="field" style="margin-bottom:8px;"><label>Responsable</label>'
+                + '<input id="force-responsable" placeholder="Nombre de quien está forzando el sello" value="'+(state.forceResponsable||'').replace(/"/g,'&quot;')+'" oninput="state.forceResponsable=this.value; state.forceWarning=\'\';"></div>';
+              html += '<div class="field" style="margin-bottom:8px;"><label>N° de boleta</label>'
+                + '<input id="force-receipt" placeholder="Ej: 004582" value="'+(state.forceReceiptValue||'').replace(/"/g,'&quot;')+'" oninput="state.forceReceiptValue=this.value; state.forceWarning=\'\';"></div>';
+              if(state.forceWarning){
+                html += '<div class="warn-text">'+state.forceWarning+'</div>';
+              }
+              html += '<div class="action-row"><button class="btn secondary" onclick="toggleForceForm(\''+c.id+'\')">Cancelar</button>'
+                + '<button class="btn danger" onclick="confirmForceStamp(\''+c.id+'\')">'+(state.forceLookingUp ? 'Verificando...' : 'Confirmar sello forzado')+'</button></div>';
+              html += '</div>';
+            } else {
+              html += '<div class="action-row"><button class="btn" style="background:transparent; border:1.5px dashed var(--muted); color:var(--muted);" onclick="toggleForceForm(\''+c.id+'\')">⚠️ Forzar sello (manual)</button></div>';
+            }
           }
 
           const hist = c.history || [];
@@ -1494,7 +1342,7 @@ function renderNow(){
               if(h.redemption){
                 html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--mustard-deep);">🎉 Canje gratis</b></div>';
               } else {
-                html += '<div class="history-item"><span>'+when+(h.products && h.products.length ? ' · '+h.products.join(', ') : '')+(h.amount != null ? ' · $'+h.amount : '')+(h.companyDiscount ? ' · 🏢 con descuento (no sumó sello)' : '')+'</span><b>N° '+h.receipt+'</b></div>';
+                html += '<div class="history-item"><span>'+when+(h.products && h.products.length ? ' · '+h.products.join(', ') : '')+(h.amount != null ? ' · $'+h.amount : '')+(h.companyDiscount ? ' · 🏢 con descuento (no sumó sello)' : '')+(h.forced ? ' · ⚠️ Forzado por '+h.forcedBy+(h.forcedVerified ? '' : ' (sin verificar en Toteat)') : '')+'</span><b>N° '+h.receipt+'</b></div>';
                 if(h.productDetails && h.productDetails.length){
                   html += '<div style="padding:2px 0 8px 8px; font-size:0.7rem; color:var(--muted);">';
                   h.productDetails.forEach(p=>{
@@ -1506,12 +1354,6 @@ function renderNow(){
             });
           }
           html += '</div>';
-          html += '<div class="action-row">'
-            + '<button class="btn secondary" onclick="clearCustomerHistory(\''+c.id+'\', \''+c.name.replace(/'/g,"\\'")+'\')">🗑️ Borrar historial (reiniciar a 0)</button>'
-            + '</div>';
-          if(c.historyBackup){
-            html += '<div class="action-row"><button class="btn" style="background:transparent; border:1.5px dashed var(--mustard); color:var(--mustard-deep);" onclick="restoreCustomerHistory(\''+c.id+'\', \''+c.name.replace(/'/g,"\\'")+'\')">↩️ Restaurar historial anterior</button></div>';
-          }
           html += '</div>'; // end customer-expand
         }
 
@@ -1521,25 +1363,17 @@ function renderNow(){
     }
 
     if(state.isAdmin){
-      html += '<button class="btn secondary" style="margin-top:20px; margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;" onclick="state.showCompaniesPanel = !state.showCompaniesPanel; render();">'
-        + '<span>🏢 Empresas con descuento'+(state.allCompanies.length ? ' ('+state.allCompanies.length+')' : '')+'</span>'
-        + '<span>'+(state.showCompaniesPanel ? '▲' : '▼')+'</span>'
-        + '</button>';
-    }
-    if(state.isAdmin && state.showCompaniesPanel){
-      html += '<button class="btn secondary" style="margin-bottom:14px;" onclick="state.showCreateCompanyForm = !state.showCreateCompanyForm; render();">'+(state.showCreateCompanyForm ? '✕ Cancelar' : '+ Crear nueva empresa')+'</button>';
-      if(state.showCreateCompanyForm){
-        html += '<div class="receipt-box" style="margin-bottom:14px;">';
-        html += '<div class="field" style="margin-bottom:8px;"><label>Nombre de la empresa</label>'
-          + '<input id="new-company-name" value="'+(state.newCompanyName||'').replace(/"/g,'&quot;')+'" oninput="state.newCompanyName=this.value;"></div>';
-        html += '<div class="field" style="margin-bottom:8px;"><label>Código (para compartir con sus empleados)</label>'
-          + '<input id="new-company-code" placeholder="Ej: ACME2026" value="'+(state.newCompanyCode||'').replace(/"/g,'&quot;')+'" oninput="state.newCompanyCode=this.value;"></div>';
-        html += '<div class="field" style="margin-bottom:8px;"><label>Descuento</label>'
-          + '<input id="new-company-discount" placeholder="Ej: 15% en toda compra" value="'+(state.newCompanyDiscount||'').replace(/"/g,'&quot;')+'" oninput="state.newCompanyDiscount=this.value;"></div>';
-        html += '<button class="btn secondary" onclick="createCompany()">Crear empresa</button>';
-        html += '<p class="note" style="margin-top:10px; margin-bottom:0;">Los descuentos de empresa no se combinan con otras promociones: una boleta marcada "con descuento de empresa" no suma sello para el café gratis.</p>';
-        html += '</div>';
-      }
+      html += '<div class="section-label">Empresas con descuento</div>';
+      html += '<div class="receipt-box" style="margin-bottom:14px;">';
+      html += '<div class="field" style="margin-bottom:8px;"><label>Nombre de la empresa</label>'
+        + '<input id="new-company-name" value="'+(state.newCompanyName||'').replace(/"/g,'&quot;')+'" oninput="state.newCompanyName=this.value;"></div>';
+      html += '<div class="field" style="margin-bottom:8px;"><label>Código (para compartir con sus empleados)</label>'
+        + '<input id="new-company-code" placeholder="Ej: ACME2026" value="'+(state.newCompanyCode||'').replace(/"/g,'&quot;')+'" oninput="state.newCompanyCode=this.value;"></div>';
+      html += '<div class="field" style="margin-bottom:8px;"><label>Descuento</label>'
+        + '<input id="new-company-discount" placeholder="Ej: 15% en toda compra" value="'+(state.newCompanyDiscount||'').replace(/"/g,'&quot;')+'" oninput="state.newCompanyDiscount=this.value;"></div>';
+      html += '<button class="btn secondary" onclick="createCompany()">Crear empresa</button>';
+      html += '<p class="note" style="margin-top:10px; margin-bottom:0;">Los descuentos de empresa no se combinan con otras promociones: una boleta marcada "con descuento de empresa" no suma sello para el café gratis.</p>';
+      html += '</div>';
 
       if(state.allCompanies.length === 0){
         html += '<div class="empty-state" style="padding:14px 10px;">Todavía no creaste ninguna empresa.</div>';
@@ -1560,7 +1394,6 @@ function renderNow(){
             + '<div class="mini-actions">'
               + '<button class="mini-btn" onclick="event.stopPropagation(); toggleCompanyEditForm(\''+co.id+'\')">Modificar</button>'
               + '<button class="mini-btn '+(co.active?'danger':'')+'" onclick="event.stopPropagation(); toggleCompanyActive(\''+co.id+'\')">'+(co.active?'Desactivar':'Activar')+'</button>'
-              + '<button class="mini-btn danger" onclick="event.stopPropagation(); deleteCompany(\''+co.id+'\', \''+co.name.replace(/'/g,"\\'")+'\')">Eliminar</button>'
               + '</div>'
             + '</div>';
 
@@ -1589,7 +1422,7 @@ function renderNow(){
                 const clientDisabled = c.companyEnabled === false;
                 const clientExpanded = state.expandedCompanyClientId === c.id;
                 html += '<div class="history-item" style="align-items:center; cursor:pointer;" onclick="toggleCompanyClientExpand(\''+c.id+'\')">'
-                  + '<span><b style="color:var(--ink);">'+c.name+'</b>'+(c.rut ? ' <span style="color:var(--muted);">· '+formatRut(c.rut)+'</span>' : ' <span style="color:var(--muted);">· sin RUT</span>')+(pending ? ' · pendiente' : clientDisabled ? ' · deshabilitado' : '')+'</span>'
+                  + '<span>'+c.name+(pending ? ' · pendiente' : clientDisabled ? ' · deshabilitado' : '')+'</span>'
                   + '<span style="display:flex; gap:6px;" onclick="event.stopPropagation();">'
                   + (pending
                       ? '<button class="mini-btn" onclick="approveCompany(\''+c.id+'\')">Aprobar</button><button class="mini-btn danger" onclick="rejectCompany(\''+c.id+'\')">Rechazar</button>'
@@ -1634,18 +1467,6 @@ function renderNow(){
         html += '</div>';
       }
 
-      if(state.deletedCompanies.length > 0){
-        html += '<div class="section-label">Empresas eliminadas recientemente</div>';
-        html += '<div class="staff-list" style="margin-bottom:14px;">';
-        state.deletedCompanies.slice(0,5).forEach(co=>{
-          html += '<div class="cust-row">'
-            + '<div><div class="cname">'+co.name+'<span class="cid">#'+co.id+'</span></div><div class="cmeta">'+co.discount+'</div></div>'
-            + '<button class="mini-btn" onclick="restoreDeletedCompany(\''+co.id+'\', \''+co.name.replace(/'/g,"\\'")+'\')">↩️ Restaurar</button>'
-            + '</div>';
-        });
-        html += '</div>';
-      }
-
       const orphanPending = state.allCustomers.filter(c => c.companyStatus === 'pending' && !state.allCompanies.some(co => co.id === c.companyCode));
       if(orphanPending.length > 0){
         html += '<div class="section-label">Solicitudes con código no reconocido ('+orphanPending.length+')</div>';
@@ -1660,14 +1481,6 @@ function renderNow(){
       }
     }
 
-    if(state.isAdmin){
-      html += '<button class="btn secondary" style="margin-bottom:14px; display:flex; justify-content:space-between; align-items:center;" onclick="state.showPromoPanel = !state.showPromoPanel; render();">'
-        + '<span>📣 Enviar promoción</span>'
-        + '<span>'+(state.showPromoPanel ? '▲' : '▼')+'</span>'
-        + '</button>';
-    }
-
-    if(state.isAdmin && state.showPromoPanel){
     html += '<div class="section-label">Enviar promoción</div>';
     if(state.allCustomers.length === 0){
       html += '<div class="empty-state">Necesitás al menos un cliente registrado para enviar promociones.</div>';
@@ -1690,12 +1503,12 @@ function renderNow(){
     if(state.allCustomers.length > 0){
       html += '<p class="note">El N° de boleta y los productos quedan guardados por cliente para cruzarlos contra Toteat y armar su perfil de gustos con el tiempo. Acá se cargan a mano; en producción, al confirmar la boleta, tu backend le pediría a la API de Toteat el detalle de esa orden (los productos vendidos) y completaría este perfil automáticamente, sin que el staff tenga que tipearlo.</p>';
     }
-    }
 
     } // fin del bloque protegido por login de administrador
   }
 
   html += '</main>';
+  html += '<div class="footer-addr" style="margin-top:0; padding:0 20px 18px;">v. '+APP_VERSION+'</div>';
   if(state.toast) html += '<div class="toast">'+state.toast+'</div>';
 
   if(state.showReportModal){
@@ -1800,7 +1613,6 @@ async function createCompany(){
     state.newCompanyName = '';
     state.newCompanyCode = '';
     state.newCompanyDiscount = '';
-    state.showCreateCompanyForm = false;
     await loadCompanies();
     showToast('Empresa creada');
     render();
@@ -1817,58 +1629,6 @@ async function toggleCompanyActive(id){
   await saveCompany({ ...co, active: !co.active });
   await loadCompanies();
   render();
-}
-
-async function deleteCompany(id, name){
-  if(!state.isAdmin){ showToast('Solo un administrador puede eliminar empresas.'); return; }
-  const linkedCount = state.allCustomers.filter(c => c.companyCode === id && (c.companyStatus === 'approved' || c.companyStatus === 'pending')).length;
-  const extra = linkedCount > 0 ? ' '+linkedCount+' cliente(s) vinculado(s) van a mantener su tarjeta normal, solo van a perder el beneficio de esta empresa.' : '';
-  const sure = window.confirm('¿Eliminar la empresa '+name+'?'+extra+' Vas a poder restaurarla después si fue un error.');
-  if(!sure) return;
-  try{
-    const co = state.allCompanies.find(x => x.id === id);
-    if(co){
-      const { id: _drop, ...coData } = co;
-      await fsSetDoc(fsDoc(db, 'deletedCompanies', id), { ...coData, deletedAt: Date.now() });
-    }
-    await fsDeleteDoc(fsDoc(db, 'companies', id));
-    if(state.expandedCompanyId === id) state.expandedCompanyId = null;
-    if(state.editingCompanyId === id) state.editingCompanyId = null;
-    await trimDeletedCompaniesBackup();
-    showToast('Empresa '+name+' eliminada. Sus clientes conservan la tarjeta, sin el beneficio.');
-    render();
-  }catch(e){
-    console.error(e);
-    showToast('No se pudo eliminar la empresa. Probá de nuevo.');
-  }
-}
-
-// Solo guardamos las últimas 5 empresas eliminadas como respaldo
-async function trimDeletedCompaniesBackup(){
-  try{
-    const snap = await fsGetDocs(fsCollection(db, 'deletedCompanies'));
-    const all = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a,b) => (b.deletedAt||0) - (a.deletedAt||0));
-    const toRemove = all.slice(5);
-    for(const item of toRemove){
-      await fsDeleteDoc(fsDoc(db, 'deletedCompanies', item.id));
-    }
-  }catch(e){ console.error(e); }
-}
-
-async function restoreDeletedCompany(id, name){
-  if(!state.isAdmin){ showToast('Solo un administrador puede restaurar empresas.'); return; }
-  try{
-    const snap = await fsGetDoc(fsDoc(db, 'deletedCompanies', id));
-    if(!snap.exists()){ showToast('No encontramos esa empresa en el respaldo.'); return; }
-    const { deletedAt, ...coData } = snap.data();
-    await fsSetDoc(fsDoc(db, 'companies', id), coData);
-    await fsDeleteDoc(fsDoc(db, 'deletedCompanies', id));
-    showToast('Empresa '+name+' restaurada');
-    render();
-  }catch(e){
-    console.error(e);
-    showToast('No se pudo restaurar la empresa. Probá de nuevo.');
-  }
 }
 
 async function requestCompanyCode(){
@@ -2132,12 +1892,14 @@ async function saveAdminEdit(id){
 
   try{
     if(phone){
-      const phoneSnap = await fsGetDoc(fsDoc(db, 'phoneIndex', phone));
-      if(phoneSnap.exists() && phoneSnap.data().customerId !== id){ showToast('Ese teléfono ya lo usa otro cliente'); return; }
+      const q = fsQuery(fsCollection(db,'customers'), fsWhere('phone','==',phone));
+      const snap = await fsGetDocs(q);
+      if(snap.docs.some(d => d.id !== id)){ showToast('Ese teléfono ya lo usa otro cliente'); return; }
     }
     if(email){
-      const emailSnap = await fsGetDoc(fsDoc(db, 'emailIndex', email));
-      if(emailSnap.exists() && emailSnap.data().customerId !== id){ showToast('Ese email ya lo usa otro cliente'); return; }
+      const q2 = fsQuery(fsCollection(db,'customers'), fsWhere('email','==',email));
+      const snap2 = await fsGetDocs(q2);
+      if(snap2.docs.some(d => d.id !== id)){ showToast('Ese email ya lo usa otro cliente'); return; }
     }
   }catch(e){
     console.error(e);
@@ -2148,8 +1910,6 @@ async function saveAdminEdit(id){
   const snap = await fsGetDoc(fsDoc(db, 'customers', id));
   if(!snap.exists()) return;
   let cust = { id, ...snap.data() };
-  const oldPhone = cust.phone;
-  const oldEmail = cust.email;
   cust.phone = phone;
   cust.email = email;
 
@@ -2158,19 +1918,6 @@ async function saveAdminEdit(id){
   cust.internalNote = (state.adminEditNote||'').trim();
 
   await saveCustomer(cust);
-
-  // Mantenemos sincronizados los índices de búsqueda si cambió el teléfono/correo
-  try{
-    if(oldPhone !== phone){
-      if(oldPhone) await fsDeleteDoc(fsDoc(db, 'phoneIndex', oldPhone));
-      if(phone) await fsSetDoc(fsDoc(db, 'phoneIndex', phone), { customerId: id });
-    }
-    if(oldEmail !== email){
-      if(oldEmail) await fsDeleteDoc(fsDoc(db, 'emailIndex', oldEmail));
-      if(email) await fsSetDoc(fsDoc(db, 'emailIndex', email), { customerId: id });
-    }
-  }catch(e){ console.error(e); }
-
   await loadAllCustomers();
   state.adminEditingId = null;
   showToast('Datos actualizados');
@@ -2188,62 +1935,6 @@ async function toggleDisabled(id){
   showToast(cust.disabled ? 'Cliente deshabilitado' : 'Cliente habilitado nuevamente');
   render();
 }
-
-async function deleteCustomerAccount(id, name){
-  if(!state.isAdmin){ showToast('Solo un administrador puede borrar clientes.'); return; }
-  const sure = window.confirm('¿Borrar definitivamente la tarjeta de '+name+'? Esta acción no se puede deshacer.');
-  if(!sure) return;
-  try{
-    const snap = await fsGetDoc(fsDoc(db, 'customers', id));
-    if(snap.exists()){
-      const cust = snap.data();
-      if(cust.phone){ try{ await fsDeleteDoc(fsDoc(db, 'phoneIndex', cust.phone)); }catch(e){} }
-      if(cust.email){ try{ await fsDeleteDoc(fsDoc(db, 'emailIndex', cust.email)); }catch(e){} }
-    }
-    await fsDeleteDoc(fsDoc(db, 'customers', id));
-    await loadAllCustomers();
-    state.selectedCustomerId = null;
-    showToast('Tarjeta de '+name+' borrada definitivamente');
-    render();
-  }catch(e){
-    console.error(e);
-    showToast('No se pudo borrar. Probá de nuevo.');
-  }
-}
-
-async function clearCustomerHistory(id, name){
-  if(!state.isAdmin){ showToast('Solo un administrador puede borrar el historial.'); return; }
-  const sure = window.confirm('¿Borrar el historial y reiniciar los sellos de '+name+' a 0? Vas a poder restaurarlo después si te equivocaste.');
-  if(!sure) return;
-  const snap = await fsGetDoc(fsDoc(db, 'customers', id));
-  if(!snap.exists()) return;
-  let cust = { id, ...snap.data() };
-  // Guardamos un respaldo completo antes de borrar, por si hace falta restaurar
-  cust.historyBackup = { history: cust.history || [], stamps: cust.stamps || 0, redeemed: cust.redeemed || 0, savedAt: Date.now() };
-  cust.history = [];
-  cust.stamps = 0;
-  await saveCustomer(cust);
-  await loadAllCustomers();
-  showToast('Historial de '+name+' reiniciado. Podés restaurarlo si hizo falta.');
-  render();
-}
-
-async function restoreCustomerHistory(id, name){
-  if(!state.isAdmin){ showToast('Solo un administrador puede restaurar el historial.'); return; }
-  const snap = await fsGetDoc(fsDoc(db, 'customers', id));
-  if(!snap.exists()) return;
-  let cust = { id, ...snap.data() };
-  if(!cust.historyBackup){ showToast('No hay ningún respaldo guardado para '+name+'.'); return; }
-  cust.history = cust.historyBackup.history || [];
-  cust.stamps = cust.historyBackup.stamps || 0;
-  cust.redeemed = cust.historyBackup.redeemed != null ? cust.historyBackup.redeemed : cust.redeemed;
-  cust.historyBackup = null;
-  await saveCustomer(cust);
-  await loadAllCustomers();
-  showToast('Historial de '+name+' restaurado');
-  render();
-}
-
 
 function selectCustomer(id){
   state.selectedCustomerId = state.selectedCustomerId === id ? null : id;
@@ -2295,12 +1986,14 @@ async function handleRegister(){
 
   try{
     if(phone){
-      const snap = await fsGetDoc(fsDoc(db, 'phoneIndex', phone));
-      if(snap.exists()){ showToast('Ese teléfono ya está registrado en el club.'); return; }
+      const q = fsQuery(fsCollection(db, 'customers'), fsWhere('phone', '==', phone));
+      const snap = await fsGetDocs(q);
+      if(!snap.empty){ showToast('Ese teléfono ya está registrado en el club.'); return; }
     }
     if(email){
-      const snap2 = await fsGetDoc(fsDoc(db, 'emailIndex', email));
-      if(snap2.exists()){ showToast('Ese email ya está registrado en el club.'); return; }
+      const q2 = fsQuery(fsCollection(db, 'customers'), fsWhere('email', '==', email));
+      const snap2 = await fsGetDocs(q2);
+      if(!snap2.empty){ showToast('Ese email ya está registrado en el club.'); return; }
     }
   }catch(e){
     console.error(e);
@@ -2312,7 +2005,6 @@ async function handleRegister(){
 }
 
 async function resetMe(){
-  if(myCardUnsubscribe){ myCardUnsubscribe(); myCardUnsubscribe = null; }
   localStorage.removeItem('norai-my-id');
   state.me = null;
   state.screen = 'register';
@@ -2331,62 +2023,14 @@ document.addEventListener('click', function(e){
 function isStaffDevice(){
   try{
     const params = new URLSearchParams(window.location.search);
-    if(params.get('staff') === 'norai2026'){
+    if(params.get('staff') === 'norai2024'){
       localStorage.setItem('norai-staff-device', '1');
-    }
-    if(params.get('mode') === 'staff'){
-      localStorage.setItem('norai-default-mode', 'staff');
     }
     return localStorage.getItem('norai-staff-device') === '1';
   }catch(e){
     return false;
   }
 }
-
-// Desbloqueo manual: tocar el logo 5 veces seguidas (en menos de 3 segundos)
-// pide el código de staff. Esto funciona en cualquier instancia de la app
-// (Safari o un ícono de pantalla de inicio con almacenamiento propio) sin
-// depender de que la URL conserve parámetros al agregarla a inicio.
-let brandTapCount = 0;
-let brandTapTimer = null;
-function handleBrandTap(){
-  brandTapCount++;
-  if(brandTapTimer) clearTimeout(brandTapTimer);
-  brandTapTimer = setTimeout(()=>{ brandTapCount = 0; }, 3000);
-  if(brandTapCount >= 5){
-    brandTapCount = 0;
-    const code = window.prompt('Código de acceso staff:');
-    if(code === 'norai2026'){
-      localStorage.setItem('norai-staff-device', '1');
-      showToast('Modo Personal desbloqueado en este dispositivo');
-      switchMode('staff');
-    } else if(code !== null){
-      showToast('Código incorrecto');
-    }
-  }
-}
-
-// Una vez en modo Personal, esto deja fijado que este dispositivo/ícono
-// siempre abra directo en Personal (útil para un ícono dedicado de admin).
-function setThisDeviceAsAdminDefault(){
-  localStorage.setItem('norai-default-mode', 'staff');
-  showToast('Este dispositivo va a abrir siempre en modo Personal');
-  render();
-}
-
-function clearThisDeviceAdminDefault(){
-  localStorage.removeItem('norai-default-mode');
-  showToast('Este dispositivo ya no abre directo en Personal');
-  render();
-}
-
-// Si este dispositivo/atajo de pantalla de inicio quedó marcado para abrir
-// directo en modo Personal, lo dejamos listo antes del primer render.
-try{
-  if(isStaffDevice() && localStorage.getItem('norai-default-mode') === 'staff'){
-    state.mode = 'staff';
-  }
-}catch(e){}
 
 (async function start(){
   const ok = await initFirebase();

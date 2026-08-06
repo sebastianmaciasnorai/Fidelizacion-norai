@@ -447,7 +447,7 @@ const STAMPS_GOAL = 5;
 // Se muestra abajo de todo en la app para poder confirmar, desde el celular,
 // que Netlify ya terminó de desplegar la versión que acabás de subir
 // (compará lo que ves acá con la fecha/etiqueta que le pusiste al subir el archivo).
-const APP_VERSION = '2026-08-06 · vuelta a QR + ID legible (iniciales + RUT)';
+const APP_VERSION = '2026-08-06 · descuento de empresa: solo informativo, sin checkbox manual';
 
 function uid(prefix){ return prefix + '-' + Math.random().toString(36).slice(2,9); }
 
@@ -769,7 +769,7 @@ async function addStamp(customerId){
   const products = (state.productsValue||'').split(',').map(p=>p.trim()).filter(Boolean);
   const custCo = state.allCompanies.find(x => x.id === cust.companyCode);
   const activeCompanyBenefit = cust.companyStatus === 'approved' && !!custCo && custCo.active !== false && cust.companyEnabled !== false;
-  const hasCompanyDiscount = activeCompanyBenefit ? true : !!state.receiptCompanyDiscount;
+  const hasCompanyDiscount = activeCompanyBenefit;
   const amount = state.amountValue !== '' && state.amountValue != null ? Number(state.amountValue) : null;
 
   let companyName = '', companyDiscountLabel = '';
@@ -1352,10 +1352,6 @@ function render(){
                 + '<input type="checkbox" checked disabled style="margin-top:2px;">'
                 + '<span style="font-size:0.78rem;">Esta boleta tiene descuento de empresa aplicado (no suma sello — los descuentos de empresa no se combinan con otras promociones)</span></div>';
               html += '<p class="note" style="margin-top:0; margin-bottom:10px;">'+c.name+' tiene activo el descuento de <b>'+co.name+'</b> ('+co.discount+'). Mientras esté activo, todas sus compras usan ese descuento y no suman sello. Para volver a sumar sellos, desactivá su beneficio desde "Empresas con descuento".</p>';
-            } else {
-              html += '<div class="checkbox-row" style="margin-bottom:10px; align-items:flex-start;">'
-                + '<input type="checkbox" id="receipt-company-discount" style="margin-top:2px;" '+(state.receiptCompanyDiscount?'checked':'')+' onchange="state.receiptCompanyDiscount=this.checked;">'
-                + '<span style="font-size:0.78rem;">Esta boleta tiene descuento de empresa aplicado (no suma sello — los descuentos de empresa no se combinan con otras promociones)</span></div>';
             }
             if(state.receiptWarning){
               html += '<div class="warn-text">'+state.receiptWarning+'</div>';

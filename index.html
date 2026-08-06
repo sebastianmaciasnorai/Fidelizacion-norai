@@ -146,7 +146,7 @@
   }
 
   .qr-box{ display:flex; justify-content:center; margin: 18px 0 6px; position:relative; z-index:1; }
-  .qr-frame{ background:#FFFFFF; padding:14px 10px; border-radius:14px; width:100%; max-width:280px; display:flex; justify-content:center; }
+  .qr-frame{ background:transparent; padding:10px 0; border-radius:14px; width:100%; max-width:280px; display:flex; justify-content:center; }
   .qr-frame svg{ width:100%; height:auto; max-width:260px; }
   .id-line{ text-align:center; font-family:'JetBrains Mono'; font-size:0.68rem; color:rgba(251,249,244,0.5); letter-spacing:0.05em; margin-top:8px; position:relative; z-index:1; }
 
@@ -448,7 +448,7 @@ const STAMPS_GOAL = 5;
 // Se muestra abajo de todo en la app para poder confirmar, desde el celular,
 // que Netlify ya terminó de desplegar la versión que acabás de subir
 // (compará lo que ves acá con la fecha/etiqueta que le pusiste al subir el archivo).
-const APP_VERSION = '2026-08-06 · código de barras + sello forzado con responsable';
+const APP_VERSION = '2026-08-06 · código de barras estilo tarjeta (fondo oscuro, rayas claras)';
 
 function uid(prefix){ return prefix + '-' + Math.random().toString(36).slice(2,9); }
 
@@ -925,12 +925,12 @@ function renderBarcode(containerId, text){
       try{
         JsBarcode(el, text, {
           format: 'CODE128',
-          lineColor: '#211F1A',
-          background: '#ffffff',
+          lineColor: '#F2EEE3',
+          background: 'transparent',
           width: 2.4,
-          height: 70,
+          height: 74,
           displayValue: false,
-          margin: 0,
+          margin: 10,
         });
       }catch(e){ console.error('No se pudo generar el código de barras', e); }
     }

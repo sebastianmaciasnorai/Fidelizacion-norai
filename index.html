@@ -447,7 +447,7 @@ const STAMPS_GOAL = 5;
 // Se muestra abajo de todo en la app para poder confirmar, desde el celular,
 // que Netlify ya terminó de desplegar la versión que acabás de subir
 // (compará lo que ves acá con la fecha/etiqueta que le pusiste al subir el archivo).
-const APP_VERSION = '2026-08-06 · descuento de empresa: solo informativo, sin checkbox manual';
+const APP_VERSION = '2026-08-06 · sellos forzados: aviso "Verificando" al cliente + reintentar/anular en staff';
 
 function uid(prefix){ return prefix + '-' + Math.random().toString(36).slice(2,9); }
 
@@ -691,6 +691,62 @@ async function confirmForceStamp(customerId){
   state.forcingCustomerId = null;
   state.forceResponsable = '';
   state.forceReceiptValue = '';
+}
+
+// Para un sello forzado que quedó "sin verificar", vuelve a preguntarle a Toteat por esa
+// boleta. Si esta vez la encuentra, confirma el sello con los datos reales (productos,
+// monto, café). Si sigue sin encontrarla, no borra nada solo — el staff decide con el
+// otro botón si prefiere seguir esperando o anular el sello.
+async function retryVerifyForcedStamp(customerId, ts){
+  const cust = state.allCustomers.find(x => x.id === customerId);
+  if(!cust) return;
+  const entry = (cust.history||[]).find(h => h.ts === ts);
+  if(!entry){ showToast('No encontré ese registro.'); return; }
+
+  showToast('Verificando en Toteat...');
+  try{
+    const res = await fetch('/.netlify/functions/lookup-receipt?receipt=' + encodeURIComponent(entry.receipt));
+    const data = await res.json();
+    if(data.ok){
+      entry.forcedVerified = true;
+      entry.products = data.products || entry.products;
+      entry.amount = data.amount != null ? data.amount : entry.amount;
+      entry.productDetails = data.productDetails || entry.productDetails || null;
+      entry.mainCoffee = data.mainCoffee || entry.mainCoffee || null;
+      await saveCustomer(cust);
+      await loadAllCustomers();
+      showToast('Boleta verificada — sello confirmado para ' + cust.name + '.');
+    } else {
+      showToast('Todavía no encontramos esa boleta en Toteat (' + (data.error || 'sin datos') + ').');
+    }
+  }catch(e){
+    console.error(e);
+    showToast('No se pudo conectar con Toteat, probá de nuevo.');
+  }
+  render();
+}
+
+// Cuando el staff decide que esa boleta forzada nunca va a aparecer en Toteat: le saca el
+// sello al cliente (si es que lo llegó a sumar) y lo saca de su tarjeta — para el cliente
+// queda como si nunca hubiese pasado. Pero acá, en el panel de staff, el registro se
+// mantiene en rojo como "anulado", para tener rastro de qué pasó y quién lo forzó.
+async function cancelForcedStamp(customerId, ts){
+  const cust = state.allCustomers.find(x => x.id === customerId);
+  if(!cust) return;
+  const entry = (cust.history||[]).find(h => h.ts === ts);
+  if(!entry){ showToast('No encontré ese registro.'); return; }
+  if(!confirm('¿Anular este sello forzado? Se le va a restar de la tarjeta de ' + cust.name + ' y va a quedar marcado como anulado en el historial interno.')) return;
+
+  if(!entry.companyDiscount && cust.stamps > 0){
+    cust.stamps -= 1;
+  }
+  entry.cancelled = true;
+  entry.cancelledAt = Date.now();
+
+  await saveCustomer(cust);
+  await loadAllCustomers();
+  showToast('Sello anulado para ' + cust.name + ' — esa boleta no se encontró en Toteat.');
+  render();
 }
 
 async function submitReceipt(customerId){
@@ -1038,7 +1094,7 @@ function renderCustomerCard(cust, isOwn){
   html += '<div class="card-address">Fidel Oteiza 1923 · Providencia</div>';
   html += '</div>';
 
-  const clientHist = (cust.history || []).slice().sort((a,b)=>b.ts-a.ts);
+  const clientHist = (cust.history || []).filter(h => !h.cancelled).slice().sort((a,b)=>b.ts-a.ts);
   html += '<div class="receipt-box" style="margin-top:16px;">';
   html += '<div class="section-label" style="margin-top:0;">'+(isOwn ? 'Tus sellos' : 'Sellos de '+cust.name)+'</div>';
   if(clientHist.length === 0){
@@ -1051,6 +1107,8 @@ function renderCustomerCard(cust, isOwn){
         html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--mustard-deep);">🎉 Café gratis</b></div>';
       } else if(h.companyDiscount){
         html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--olive);">🏢 Con descuento</b></div>';
+      } else if(h.forced && !h.forcedVerified){
+        html += '<div class="history-item"><span>'+when+'</span><b>Café ☕ <span style="color:var(--muted); font-weight:500; font-size:0.7rem;">· Verificando</span></b></div>';
       } else {
         html += '<div class="history-item"><span>'+when+'</span><b>Café ☕</b></div>';
       }
@@ -1386,14 +1444,22 @@ function render(){
               const when = d.toLocaleDateString()+' '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
               if(h.redemption){
                 html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--mustard-deep);">🎉 Canje gratis</b></div>';
+              } else if(h.cancelled){
+                html += '<div class="history-item" style="border-bottom-color:rgba(166,67,43,0.4);"><span style="color:var(--danger);">'+when+' · ❌ No encontramos esa boleta — sello anulado (forzado por '+h.forcedBy+')</span><b style="color:var(--danger);">N° '+h.receipt+'</b></div>';
               } else {
-                html += '<div class="history-item"><span>'+when+(h.products && h.products.length ? ' · '+h.products.join(', ') : '')+(h.amount != null ? ' · $'+h.amount : '')+(h.companyDiscount ? ' · 🏢 con descuento (no sumó sello)' : '')+(h.forced ? ' · ⚠️ Forzado por '+h.forcedBy+(h.forcedVerified ? '' : ' (sin verificar en Toteat)') : '')+'</span><b>N° '+h.receipt+'</b></div>';
+                html += '<div class="history-item"><span>'+when+(h.products && h.products.length ? ' · '+h.products.join(', ') : '')+(h.amount != null ? ' · $'+h.amount : '')+(h.companyDiscount ? ' · 🏢 con descuento (no sumó sello)' : '')+(h.forced ? ' · ⚠️ Forzado por '+h.forcedBy+(h.forcedVerified ? ' ✅ verificado' : ' (sin verificar en Toteat)') : '')+'</span><b>N° '+h.receipt+'</b></div>';
                 if(h.productDetails && h.productDetails.length){
                   html += '<div style="padding:2px 0 8px 8px; font-size:0.7rem; color:var(--muted);">';
                   h.productDetails.forEach(p=>{
                     html += '<div>'+p.name+(p.quantity>1?' x'+p.quantity:'')+' — $'+p.amount+(h.mainCoffee && h.mainCoffee.name===p.name ? ' ☕' : '')+'</div>';
                   });
                   html += '</div>';
+                }
+                if(h.forced && !h.forcedVerified){
+                  html += '<div class="action-row" style="margin:2px 0 12px 8px; gap:8px;">'
+                    + '<button class="btn secondary" style="padding:8px 10px; font-size:0.7rem;" onclick="retryVerifyForcedStamp(\''+c.id+'\', '+h.ts+')">Reintentar verificación</button>'
+                    + '<button class="btn danger" style="padding:8px 10px; font-size:0.7rem;" onclick="cancelForcedStamp(\''+c.id+'\', '+h.ts+')">No se encontró — anular</button>'
+                    + '</div>';
                 }
               }
             });

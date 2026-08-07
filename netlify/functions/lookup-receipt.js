@@ -15,15 +15,29 @@
 //   al cliente que vuelve con el ticket unos días después de la compra.
 //   Opcional: &date=20260724 (busca SOLO ese día puntual, ignora la ventana de 3 días)
 //   Opcional: &days=5 (cambia el ancho de la ventana, entre 1 y 30 días)
+//   Opcional: &debug=ping (responde al toque, sin llamar a Toteat — para confirmar que
+//             esta versión del archivo es la que está corriendo en Netlify)
+//   Opcional: &debug=list (lista todas las boletas que Toteat devolvió en la ventana)
+
+const FUNCTION_VERSION = 'lookup-receipt v3 (ventana 3 días + debug list/ping)';
 
 exports.handler = async (event) => {
   const receipt = (event.queryStringParameters && event.queryStringParameters.receipt || '').trim();
   const dateParam = event.queryStringParameters && event.queryStringParameters.date;
   const daysParam = event.queryStringParameters && event.queryStringParameters.days;
+  const debugParam = event.queryStringParameters && event.queryStringParameters.debug;
+
+  // Chequeo instantáneo: NO llama a Toteat, solo confirma que esta versión del archivo
+  // está desplegada. Si esto no responde "version: lookup-receipt v3...", Netlify
+  // todavía está sirviendo una versión anterior del archivo.
+  if (debugParam === 'ping') {
+    return jsonResponse(200, { ok: true, version: FUNCTION_VERSION, receivedAt: new Date().toISOString() });
+  }
+
   // Modo diagnóstico: ?debug=list muestra TODAS las boletas que Toteat devolvió en la
   // ventana de fechas, sin filtrar por ningún número puntual. Sirve para ver el formato
   // real de los números (con ceros a la izquierda, sin ellos, etc.) mientras probamos.
-  const debugMode = (event.queryStringParameters && event.queryStringParameters.debug) === 'list';
+  const debugMode = debugParam === 'list';
 
   if (!receipt && !debugMode) {
     return jsonResponse(400, { ok: false, error: 'Falta el número de boleta (parámetro receipt).' });
@@ -71,6 +85,14 @@ exports.handler = async (event) => {
   }
 
   const sales = (toteatData && toteatData.data) || [];
+
+  if (debugMode) {
+    const list = sales
+      .map(s => ({ fiscalId: s.fiscalId, fiscalType: s.fiscalType, dateClosed: s.dateClosed, payed: s.payed }))
+      .sort((a, b) => String(b.dateClosed).localeCompare(String(a.dateClosed)))
+      .slice(0, 60);
+    return jsonResponse(200, { ok: true, debug: true, rangeIni: ini, rangeEnd: end, count: sales.length, sales: list });
+  }
 
   // Buscamos todas las ventas que coincidan con esa boleta (puede haber más de una fila
   // si hubo una nota de crédito asociada).

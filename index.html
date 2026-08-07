@@ -427,6 +427,9 @@ let state = {
   forceLookingUp: false,
   forcedBy: '',
   forcedVerified: false,
+  showReportImport: false,
+  reportImportBusy: false,
+  reportImportSummary: '',
 };
 
 // PIN de administrador para esta demo. En producción esto debe validarse
@@ -447,7 +450,7 @@ const STAMPS_GOAL = 5;
 // Se muestra abajo de todo en la app para poder confirmar, desde el celular,
 // que Netlify ya terminó de desplegar la versión que acabás de subir
 // (compará lo que ves acá con la fecha/etiqueta que le pusiste al subir el archivo).
-const APP_VERSION = '2026-08-06 · sellos forzados: aviso "Verificando" al cliente + reintentar/anular en staff';
+const APP_VERSION = '2026-08-07 · carga manual de reporte Toteat para verificar sellos pendientes';
 
 function uid(prefix){ return prefix + '-' + Math.random().toString(36).slice(2,9); }
 
@@ -746,6 +749,156 @@ async function cancelForcedStamp(customerId, ts){
   await saveCustomer(cust);
   await loadAllCustomers();
   showToast('Sello anulado para ' + cust.name + ' — esa boleta no se encontró en Toteat.');
+  render();
+}
+
+function toggleReportImport(){
+  state.showReportImport = !state.showReportImport;
+  render();
+}
+
+// Busca un valor en una fila del reporte probando distintos nombres de columna posibles
+// (no sabemos todavía el nombre exacto que usa el export de Toteat, así que probamos
+// varias variantes comunes, sin importar mayúsculas/tildes).
+function pickReportField(row, candidates){
+  const keys = Object.keys(row);
+  const normKeys = keys.map(k => normalizeForId(k).replace(/\s+/g, ''));
+  for(const cand of candidates){
+    const normCand = normalizeForId(cand).replace(/\s+/g, '');
+    const idx = normKeys.findIndex(k => k === normCand || k.includes(normCand));
+    if(idx !== -1 && row[keys[idx]] !== undefined && row[keys[idx]] !== '') return row[keys[idx]];
+  }
+  return null;
+}
+
+// Mismo criterio de "es café" que usa lookup-receipt.js (jerarquía AB.120, con respaldo
+// por nombre), para que un sello verificado por reporte manual se vea exactamente igual
+// que uno verificado en vivo por la API.
+const REPORT_COFFEE_KEYWORDS = ['cafe', 'café', 'latte', 'capuccino', 'cappuccino', 'espresso', 'expreso', 'americano', 'macchiato', 'mocha', 'moka', 'flat white', 'cortado', 'cold brew'];
+function reportRowIsCoffee(category, name){
+  const cat = (category || '').toString().toUpperCase();
+  if(cat.includes('AB.120')) return true;
+  if(!category){
+    const n = (name || '').toLowerCase();
+    return REPORT_COFFEE_KEYWORDS.some(k => n.includes(k));
+  }
+  return false;
+}
+
+// Lee el archivo (xlsx/xls/csv) y arma un mapa: N° de boleta -> { products, amount, mainCoffee }
+// Asume que cada fila del reporte es UNA línea de producto de UNA venta (lo más común en
+// reportes de detalle de POS). Si el reporte real viene armado distinto, avisá para ajustar
+// el lector de columnas — esta primera versión es un punto de partida razonable.
+async function parseSalesReportFile(file){
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: 'array' });
+  const firstSheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[firstSheetName];
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' });
+
+  const RECEIPT_FIELDS = ['fiscalId', 'n° boleta', 'nro boleta', 'numero boleta', 'boleta', 'n boleta', 'folio', 'documento'];
+  const NAME_FIELDS = ['producto', 'nombre producto', 'item', 'nombre'];
+  const CATEGORY_FIELDS = ['categoria', 'categoría', 'jerarquia', 'jerarquía', 'hierarchyName', 'hierarchy', 'familia'];
+  const AMOUNT_FIELDS = ['monto', 'total', 'subtotal', 'precio', 'payed', 'valor'];
+  const QTY_FIELDS = ['cantidad', 'cant', 'qty', 'quantity'];
+  const DATE_FIELDS = ['fecha', 'dateClosed', 'fecha cierre', 'fecha venta'];
+
+  const receiptMap = {};
+
+  rows.forEach(row => {
+    const receiptRaw = pickReportField(row, RECEIPT_FIELDS);
+    if(receiptRaw === null) return;
+    const receipt = String(receiptRaw).trim();
+    if(!receipt) return;
+
+    const name = String(pickReportField(row, NAME_FIELDS) || '').trim();
+    const category = pickReportField(row, CATEGORY_FIELDS);
+    const amount = Number(pickReportField(row, AMOUNT_FIELDS)) || 0;
+    const quantity = Number(pickReportField(row, QTY_FIELDS)) || 1;
+    const dateClosed = pickReportField(row, DATE_FIELDS) || null;
+
+    if(!receiptMap[receipt]){
+      receiptMap[receipt] = { receipt, products: [], amount: 0, dateClosed };
+    }
+    receiptMap[receipt].products.push({ name, quantity, amount, isCoffee: reportRowIsCoffee(category, name) });
+    receiptMap[receipt].amount += amount;
+  });
+
+  // Para cada boleta, elegimos "el café" igual que en lookup-receipt.js: si hay varios,
+  // el de mayor valor.
+  Object.values(receiptMap).forEach(sale => {
+    const coffeeItems = sale.products.filter(p => p.isCoffee);
+    const mainCoffee = coffeeItems.length > 0
+      ? coffeeItems.reduce((max, p) => (p.amount > (max ? max.amount : -1) ? p : max), null)
+      : null;
+    sale.mainCoffee = mainCoffee ? { name: mainCoffee.name, amount: mainCoffee.amount } : null;
+    sale.productDetails = sale.products.map(p => ({ name: p.name, quantity: p.quantity, amount: p.amount, category: p.isCoffee ? 'AB.120' : null }));
+    sale.productsText = sale.products.map(p => p.name + (p.quantity > 1 ? ' x' + p.quantity : ''));
+  });
+
+  return receiptMap;
+}
+
+// Cruza el reporte recién subido contra TODOS los sellos "Verificando" de TODOS los
+// clientes, y confirma los que encuentre.
+async function processSalesReportFile(file){
+  if(!file) return;
+  state.reportImportBusy = true;
+  state.reportImportSummary = '';
+  render();
+
+  try{
+    const receiptMap = await parseSalesReportFile(file);
+    const receiptCount = Object.keys(receiptMap).length;
+
+    if(receiptCount === 0){
+      state.reportImportSummary = 'No pude leer ninguna boleta de ese archivo. Puede que las columnas tengan nombres distintos a los que probé — mandame una fila de ejemplo para ajustar el lector.';
+      state.reportImportBusy = false;
+      render();
+      return;
+    }
+
+    let verifiedCount = 0;
+    let stillPending = 0;
+    const verifiedNames = [];
+
+    for(const cust of state.allCustomers){
+      let changed = false;
+      for(const entry of (cust.history || [])){
+        if(entry.forced && !entry.forcedVerified && !entry.cancelled){
+          const match = receiptMap[String(entry.receipt || '').trim()];
+          if(match){
+            entry.forcedVerified = true;
+            entry.products = match.productsText;
+            entry.amount = match.amount;
+            entry.productDetails = match.productDetails;
+            entry.mainCoffee = match.mainCoffee;
+            verifiedCount++;
+            verifiedNames.push(cust.name + ' (N° ' + entry.receipt + ')');
+            changed = true;
+          } else {
+            stillPending++;
+          }
+        }
+      }
+      if(changed){
+        await saveCustomer(cust);
+      }
+    }
+
+    if(verifiedCount > 0){
+      await loadAllCustomers();
+    }
+
+    state.reportImportSummary = 'Reporte leído: ' + receiptCount + ' boleta(s).\n'
+      + '✅ Sellos confirmados: ' + verifiedCount + (verifiedNames.length ? ('\n   ' + verifiedNames.join('\n   ')) : '') + '\n'
+      + '⏳ Sellos que siguen esperando otro reporte: ' + stillPending;
+  }catch(e){
+    console.error(e);
+    state.reportImportSummary = 'No pude procesar ese archivo. Revisá que sea el Excel/CSV que exporta Toteat y probá de nuevo.';
+  }
+
+  state.reportImportBusy = false;
   render();
 }
 
@@ -1110,7 +1263,8 @@ function renderCustomerCard(cust, isOwn){
       } else if(h.forced && !h.forcedVerified){
         html += '<div class="history-item"><span>'+when+'</span><b>Café ☕ <span style="color:var(--muted); font-weight:500; font-size:0.7rem;">· Verificando</span></b></div>';
       } else {
-        html += '<div class="history-item"><span>'+when+'</span><b>Café ☕</b></div>';
+        const coffeeName = h.mainCoffee && h.mainCoffee.name ? h.mainCoffee.name : 'Café';
+        html += '<div class="history-item"><span>'+when+'</span><b>'+coffeeName+' ☕</b></div>';
       }
     });
   }
@@ -1316,6 +1470,21 @@ function render(){
     if(!state.isAdmin){
       html += '<div class="empty-state" style="padding:40px 20px;">🔒 Iniciá sesión como administrador arriba para ver los clientes registrados y poder sumarles sellos por sus compras.</div>';
     } else {
+
+    // --- Carga manual de reporte de ventas (respaldo mientras la API de Toteat no responde) ---
+    html += '<div class="receipt-box" style="margin-bottom:14px;">';
+    html += '<div class="who" style="margin-bottom:8px; cursor:pointer;" onclick="toggleReportImport()"><b>📄 Cargar reporte de ventas de Toteat</b> <span style="color:var(--muted); font-size:0.75rem;">('+(state.showReportImport?'ocultar':'mostrar')+')</span></div>';
+    if(state.showReportImport){
+      html += '<p class="note" style="margin-top:0;">Subí el reporte de ventas del día (Excel o CSV) que bajás desde el panel de Toteat. La app va a revisar todos los sellos marcados como "Verificando" y va a confirmar los que encuentre en ese reporte, con el café real y el monto.</p>';
+      html += '<input type="file" id="report-file-input" accept=".xlsx,.xls,.csv" onchange="processSalesReportFile(this.files[0])" style="margin-bottom:10px;">';
+      if(state.reportImportBusy){
+        html += '<div class="who">Procesando reporte...</div>';
+      }
+      if(state.reportImportSummary){
+        html += '<div class="note" style="margin-top:10px; white-space:pre-line;">'+state.reportImportSummary+'</div>';
+      }
+    }
+    html += '</div>';
 
     html += '<div class="field" style="margin-bottom:14px;"><input id="staff-search" placeholder="Buscar por nombre, teléfono, email o ID..." value="'+(state.staffSearch||'').replace(/"/g,'&quot;')+'" oninput="state.staffSearch=this.value; debouncedRender();" onkeydown="staffSearchKeydown(event)"></div>';
 

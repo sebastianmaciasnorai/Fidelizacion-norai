@@ -11,11 +11,15 @@
 //
 // Uso desde la app:
 //   GET /.netlify/functions/lookup-receipt?receipt=004582
-//   Opcional: &date=20260724 (si no se envía, busca en el día de hoy)
+//   Por defecto busca en los últimos 3 días (hoy + 2 días atrás), para darle margen
+//   al cliente que vuelve con el ticket unos días después de la compra.
+//   Opcional: &date=20260724 (busca SOLO ese día puntual, ignora la ventana de 3 días)
+//   Opcional: &days=5 (cambia el ancho de la ventana, entre 1 y 30 días)
 
 exports.handler = async (event) => {
   const receipt = (event.queryStringParameters && event.queryStringParameters.receipt || '').trim();
   const dateParam = event.queryStringParameters && event.queryStringParameters.date;
+  const daysParam = event.queryStringParameters && event.queryStringParameters.days;
 
   if (!receipt) {
     return jsonResponse(400, { ok: false, error: 'Falta el número de boleta (parámetro receipt).' });
@@ -26,16 +30,29 @@ exports.handler = async (event) => {
     return jsonResponse(500, { ok: false, error: 'Faltan variables de entorno de Toteat en el servidor.' });
   }
 
-  // Por defecto buscamos en el día de hoy (hora de Chile). Se puede sobrescribir con ?date=YYYYMMDD
-  const today = dateParam || formatDate(new Date());
+  // Por defecto buscamos en una ventana de los últimos N días (hora de Chile), para que
+  // el cliente pueda sumar el sello aunque no venga el mismo día de la compra.
+  // Si viene ?date=YYYYMMDD, buscamos SOLO ese día puntual (útil para pruebas).
+  let ini, end;
+  if (dateParam) {
+    ini = dateParam;
+    end = dateParam;
+  } else {
+    const daysWindow = Math.max(1, Math.min(30, parseInt(daysParam, 10) || 3));
+    const now = new Date();
+    end = formatDate(now);
+    const iniDate = new Date(now);
+    iniDate.setDate(iniDate.getDate() - (daysWindow - 1));
+    ini = formatDate(iniDate);
+  }
 
   const url = new URL('https://api.toteat.com/mw/or/1.0/sales');
   url.searchParams.set('xir', TOTEAT_XIR);
   url.searchParams.set('xil', TOTEAT_XIL);
   url.searchParams.set('xiu', TOTEAT_XIU);
   url.searchParams.set('xapitoken', TOTEAT_API_TOKEN);
-  url.searchParams.set('ini', today);
-  url.searchParams.set('end', today);
+  url.searchParams.set('ini', ini);
+  url.searchParams.set('end', end);
   url.searchParams.set('detail_cancel_order', 'true');
 
   let toteatData;
@@ -56,7 +73,7 @@ exports.handler = async (event) => {
   const matches = sales.filter(s => String(s.fiscalId).trim() === receipt);
 
   if (matches.length === 0) {
-    return jsonResponse(404, { ok: false, error: 'No encontramos esa boleta en el turno de hoy.' });
+    return jsonResponse(404, { ok: false, error: 'No encontramos esa boleta en los últimos días.' });
   }
 
   const hasCreditNote = matches.some(s => s.fiscalType === 'NC');

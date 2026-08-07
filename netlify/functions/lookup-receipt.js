@@ -20,8 +20,12 @@ exports.handler = async (event) => {
   const receipt = (event.queryStringParameters && event.queryStringParameters.receipt || '').trim();
   const dateParam = event.queryStringParameters && event.queryStringParameters.date;
   const daysParam = event.queryStringParameters && event.queryStringParameters.days;
+  // Modo diagnóstico: ?debug=list muestra TODAS las boletas que Toteat devolvió en la
+  // ventana de fechas, sin filtrar por ningún número puntual. Sirve para ver el formato
+  // real de los números (con ceros a la izquierda, sin ellos, etc.) mientras probamos.
+  const debugMode = (event.queryStringParameters && event.queryStringParameters.debug) === 'list';
 
-  if (!receipt) {
+  if (!receipt && !debugMode) {
     return jsonResponse(400, { ok: false, error: 'Falta el número de boleta (parámetro receipt).' });
   }
 

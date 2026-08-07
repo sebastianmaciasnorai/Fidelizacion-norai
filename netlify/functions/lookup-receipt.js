@@ -18,8 +18,9 @@
 //   Opcional: &debug=ping (responde al toque, sin llamar a Toteat — para confirmar que
 //             esta versión del archivo es la que está corriendo en Netlify)
 //   Opcional: &debug=list (lista todas las boletas que Toteat devolvió en la ventana)
+//   Opcional: &debug=raw (muestra la respuesta cruda de Toteat, sin procesar)
 
-const FUNCTION_VERSION = 'lookup-receipt v3 (ventana 3 días + debug list/ping)';
+const FUNCTION_VERSION = 'lookup-receipt v4 (ventana 3 días + debug ping/list/raw)';
 
 exports.handler = async (event) => {
   const receipt = (event.queryStringParameters && event.queryStringParameters.receipt || '').trim();
@@ -38,8 +39,9 @@ exports.handler = async (event) => {
   // ventana de fechas, sin filtrar por ningún número puntual. Sirve para ver el formato
   // real de los números (con ceros a la izquierda, sin ellos, etc.) mientras probamos.
   const debugMode = debugParam === 'list';
+  const isDebugRequest = debugMode || debugParam === 'raw';
 
-  if (!receipt && !debugMode) {
+  if (!receipt && !isDebugRequest) {
     return jsonResponse(400, { ok: false, error: 'Falta el número de boleta (parámetro receipt).' });
   }
 
@@ -82,6 +84,14 @@ exports.handler = async (event) => {
     }
   } catch (e) {
     return jsonResponse(502, { ok: false, error: 'No se pudo conectar con Toteat.', detail: String(e) });
+  }
+
+  // ?debug=raw devuelve exactamente lo que Toteat contestó, sin que nosotros lo toquemos.
+  // Sirve para descartar que estemos leyendo mal la respuesta (por ejemplo, si los datos
+  // vinieran en otro campo que no sea "data", o si Toteat mandara un mensaje de error
+  // que no estamos mostrando).
+  if (debugParam === 'raw') {
+    return jsonResponse(200, { ok: true, debugRaw: true, requestUrl: url.toString().replace(TOTEAT_API_TOKEN, '***'), rangeIni: ini, rangeEnd: end, toteatResponseStatus: 'ver toteatData', toteatData });
   }
 
   const sales = (toteatData && toteatData.data) || [];

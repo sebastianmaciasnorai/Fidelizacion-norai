@@ -451,7 +451,7 @@ const STAMPS_GOAL = 5;
 // Se muestra abajo de todo en la app para poder confirmar, desde el celular,
 // que Netlify ya terminó de desplegar la versión que acabás de subir
 // (compará lo que ves acá con la fecha/etiqueta que le pusiste al subir el archivo).
-const APP_VERSION = '2026-08-14 · búsqueda automática de boleta reactivada (a prueba)';
+const APP_VERSION = '2026-08-14 · reintento automático de sellos pendientes al abrir el panel';
 
 // Mientras seguimos ajustando cómo lee la API los datos reales de Toteat, trabajamos
 // solo con "Forzar sello" + reportes/verificación manual. Poner en true para volver a
@@ -703,6 +703,55 @@ async function confirmForceStamp(customerId){
   render();
 }
 
+// Reintento automático y silencioso: se dispara solo (sin que nadie apriete nada) una vez
+// por sesión, cuando un admin entra al panel de staff. Recorre todos los sellos que
+// quedaron "Verificando" y les vuelve a preguntar a Toteat. Así, si una boleta no estaba
+// disponible al momento de forzarla (por ejemplo, recién hecha), se termina confirmando
+// sola más tarde, la próxima vez que alguien abra la app — sin depender de que el staff
+// se acuerde de apretar "Reintentar verificación" a mano.
+let autoRetryDone = false;
+async function autoRetryPendingStamps(){
+  if(autoRetryDone) return;
+  autoRetryDone = true;
+
+  const pending = [];
+  state.allCustomers.forEach(cust => {
+    (cust.history || []).forEach(entry => {
+      if(entry.forced && !entry.forcedVerified && !entry.cancelled){
+        pending.push({ custId: cust.id, ts: entry.ts });
+      }
+    });
+  });
+  if(pending.length === 0) return;
+
+  let anyVerified = false;
+  for(const item of pending){
+    const cust = state.allCustomers.find(c => c.id === item.custId);
+    if(!cust) continue;
+    const entry = (cust.history || []).find(h => h.ts === item.ts);
+    if(!entry || entry.forcedVerified || entry.cancelled) continue;
+    try{
+      const res = await fetch('/.netlify/functions/lookup-receipt?receipt=' + encodeURIComponent(entry.receipt));
+      const data = await res.json();
+      if(data.ok){
+        entry.forcedVerified = true;
+        entry.products = data.products || entry.products;
+        entry.amount = data.amount != null ? data.amount : entry.amount;
+        entry.productDetails = data.productDetails || entry.productDetails || null;
+        entry.mainCoffee = data.mainCoffee || entry.mainCoffee || null;
+        await saveCustomer(cust);
+        anyVerified = true;
+      }
+    }catch(e){ console.error('Reintento automático falló para la boleta ' + entry.receipt, e); }
+  }
+
+  if(anyVerified){
+    await loadAllCustomers();
+    showToast('Se confirmaron solos algunos sellos que estaban "Verificando".');
+    render();
+  }
+}
+
 // Para un sello forzado que quedó "sin verificar", vuelve a preguntarle a Toteat por esa
 // boleta. Si esta vez la encuentra, confirma el sello con los datos reales (productos,
 // monto, café). Si sigue sin encontrarla, no borra nada solo — el staff decide con el
@@ -828,7 +877,7 @@ function parseDelimitedText(text){
 
 // Mismo criterio de "es café" que usa lookup-receipt.js (jerarquía AB.120 primero, con
 // respaldo por nombre de categoría y por palabras clave del producto).
-const REPORT_COFFEE_KEYWORDS = ['cafe', 'café', 'latte', 'capuccino', 'cappuccino', 'espresso', 'expreso', 'americano', 'macchiato', 'mocha', 'moka', 'flat white', 'cortado', 'cold brew'];
+const REPORT_COFFEE_KEYWORDS = ['cafe', 'café', 'latte', 'capuccino', 'cappuccino', 'espresso', 'espreso', 'expreso', 'americano', 'macchiato', 'macchiatto', 'mocha', 'moka', 'flat white', 'cortado', 'cold brew'];
 function reportRowIsCoffee(hierarchyCode, hierarchyName, productName){
   const code = (hierarchyCode || '').toString().toUpperCase();
   if(code.includes('AB.120')) return true;
@@ -1560,6 +1609,10 @@ function render(){
     if(!state.isAdmin){
       html += '<div class="empty-state" style="padding:40px 20px;">🔒 Iniciá sesión como administrador arriba para ver los clientes registrados y poder sumarles sellos por sus compras.</div>';
     } else {
+
+    if(LIVE_RECEIPT_SEARCH_ENABLED){
+      autoRetryPendingStamps(); // dispara en segundo plano, no bloquea el render (se auto-limita a una vez por sesión)
+    }
 
     // --- Carga manual de reporte de ventas (respaldo mientras la API de Toteat no responde) ---
     html += '<div class="receipt-box" style="margin-bottom:14px;">';

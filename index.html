@@ -451,12 +451,12 @@ const STAMPS_GOAL = 5;
 // Se muestra abajo de todo en la app para poder confirmar, desde el celular,
 // que Netlify ya terminó de desplegar la versión que acabás de subir
 // (compará lo que ves acá con la fecha/etiqueta que le pusiste al subir el archivo).
-const APP_VERSION = '2026-08-14 · muestra café en descuentos + oculta reintentar-verificación (API en pausa)';
+const APP_VERSION = '2026-08-14 · búsqueda automática de boleta reactivada (a prueba)';
 
 // Mientras seguimos ajustando cómo lee la API los datos reales de Toteat, trabajamos
 // solo con "Forzar sello" + reportes/verificación manual. Poner en true para volver a
 // mostrar el botón "Buscar boleta y sumar sello" (búsqueda automática en vivo).
-const LIVE_RECEIPT_SEARCH_ENABLED = false;
+const LIVE_RECEIPT_SEARCH_ENABLED = true;
 
 function uid(prefix){ return prefix + '-' + Math.random().toString(36).slice(2,9); }
 
@@ -1344,16 +1344,17 @@ function renderCustomerCard(cust, isOwn){
     clientHist.slice(0,10).forEach(h=>{
       const d = new Date(h.ts);
       const when = d.toLocaleDateString()+' · '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+      const receiptTag = h.receipt ? ' <span style="opacity:0.55; font-size:0.68rem;">· N° '+h.receipt+'</span>' : '';
       if(h.redemption){
         html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--mustard-deep);">🎉 Café gratis</b></div>';
       } else if(h.forced && !h.forcedVerified){
-        html += '<div class="history-item"><span>'+when+'</span><b>Café ☕ <span style="color:var(--muted); font-weight:500; font-size:0.7rem;">· Verificando</span></b></div>';
+        html += '<div class="history-item"><span>'+when+receiptTag+'</span><b>Café ☕ <span style="color:var(--muted); font-weight:500; font-size:0.7rem;">· Verificando</span></b></div>';
       } else if(h.companyDiscount){
         const coffeeName = h.mainCoffee && h.mainCoffee.name ? h.mainCoffee.name : null;
-        html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--olive);">'+(coffeeName ? coffeeName+' ☕ · ' : '')+'🏢 Con descuento</b></div>';
+        html += '<div class="history-item"><span>'+when+receiptTag+'</span><b style="color:var(--olive);">'+(coffeeName ? coffeeName+' ☕ · ' : '')+'🏢 Con descuento</b></div>';
       } else {
         const coffeeName = h.mainCoffee && h.mainCoffee.name ? h.mainCoffee.name : 'Café';
-        html += '<div class="history-item"><span>'+when+'</span><b>'+coffeeName+' ☕</b></div>';
+        html += '<div class="history-item"><span>'+when+receiptTag+'</span><b>'+coffeeName+' ☕</b></div>';
       }
     });
   }

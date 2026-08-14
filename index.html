@@ -451,7 +451,7 @@ const STAMPS_GOAL = 5;
 // Se muestra abajo de todo en la app para poder confirmar, desde el celular,
 // que Netlify ya terminó de desplegar la versión que acabás de subir
 // (compará lo que ves acá con la fecha/etiqueta que le pusiste al subir el archivo).
-const APP_VERSION = '2026-08-14 · importador de reporte Toteat con columnas reales (Folio, AB., etc.)';
+const APP_VERSION = '2026-08-14 · muestra café en descuentos + oculta reintentar-verificación (API en pausa)';
 
 // Mientras seguimos ajustando cómo lee la API los datos reales de Toteat, trabajamos
 // solo con "Forzar sello" + reportes/verificación manual. Poner en true para volver a
@@ -1346,10 +1346,11 @@ function renderCustomerCard(cust, isOwn){
       const when = d.toLocaleDateString()+' · '+d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
       if(h.redemption){
         html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--mustard-deep);">🎉 Café gratis</b></div>';
-      } else if(h.companyDiscount){
-        html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--olive);">🏢 Con descuento</b></div>';
       } else if(h.forced && !h.forcedVerified){
         html += '<div class="history-item"><span>'+when+'</span><b>Café ☕ <span style="color:var(--muted); font-weight:500; font-size:0.7rem;">· Verificando</span></b></div>';
+      } else if(h.companyDiscount){
+        const coffeeName = h.mainCoffee && h.mainCoffee.name ? h.mainCoffee.name : null;
+        html += '<div class="history-item"><span>'+when+'</span><b style="color:var(--olive);">'+(coffeeName ? coffeeName+' ☕ · ' : '')+'🏢 Con descuento</b></div>';
       } else {
         const coffeeName = h.mainCoffee && h.mainCoffee.name ? h.mainCoffee.name : 'Café';
         html += '<div class="history-item"><span>'+when+'</span><b>'+coffeeName+' ☕</b></div>';
@@ -1721,9 +1722,12 @@ function render(){
                 }
                 if(h.forced && !h.forcedVerified){
                   html += '<div class="action-row" style="margin:2px 0 12px 8px; gap:8px;">'
-                    + '<button class="btn secondary" style="padding:8px 10px; font-size:0.7rem;" onclick="retryVerifyForcedStamp(\''+c.id+'\', '+h.ts+')">Reintentar verificación</button>'
+                    + (LIVE_RECEIPT_SEARCH_ENABLED ? '<button class="btn secondary" style="padding:8px 10px; font-size:0.7rem;" onclick="retryVerifyForcedStamp(\''+c.id+'\', '+h.ts+')">Reintentar verificación</button>' : '')
                     + '<button class="btn danger" style="padding:8px 10px; font-size:0.7rem;" onclick="cancelForcedStamp(\''+c.id+'\', '+h.ts+')">No se encontró — anular</button>'
                     + '</div>';
+                  if(!LIVE_RECEIPT_SEARCH_ENABLED){
+                    html += '<p class="note" style="margin:0 0 10px 8px; font-size:0.68rem;">La verificación automática está en pausa. Este sello queda "Verificando" hasta que subas un reporte de ventas que incluya la boleta N° '+h.receipt+'.</p>';
+                  }
                 }
               }
             });

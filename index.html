@@ -451,7 +451,7 @@ const STAMPS_GOAL = 5;
 // Se muestra abajo de todo en la app para poder confirmar, desde el celular,
 // que Netlify ya terminó de desplegar la versión que acabás de subir
 // (compará lo que ves acá con la fecha/etiqueta que le pusiste al subir el archivo).
-const APP_VERSION = '2026-08-14 · reintento automático de sellos pendientes al abrir el panel';
+const APP_VERSION = '2026-08-14 · historial sin duplicar + descarga a Excel por cliente';
 
 // Mientras seguimos ajustando cómo lee la API los datos reales de Toteat, trabajamos
 // solo con "Forzar sello" + reportes/verificación manual. Poner en true para volver a
@@ -816,6 +816,45 @@ function toggleReportImport(){
 function toggleHistoryView(customerId){
   state.expandedHistoryId = state.expandedHistoryId === customerId ? null : customerId;
   render();
+}
+
+// Arma un Excel con el historial completo de un cliente (fecha, hora, N° de boleta,
+// qué consumió y el valor) y lo descarga directo desde el navegador.
+function downloadCustomerHistory(customerId){
+  const cust = state.allCustomers.find(c => c.id === customerId);
+  if(!cust){ showToast('No encontré ese cliente.'); return; }
+
+  const hist = (cust.history || []).slice().sort((a,b) => a.ts - b.ts);
+  if(hist.length === 0){ showToast('Este cliente todavía no tiene historial para descargar.'); return; }
+
+  const rows = hist.map(h => {
+    const d = new Date(h.ts);
+    let tipo = 'Café';
+    if(h.redemption) tipo = 'Canje café gratis';
+    else if(h.cancelled) tipo = 'Anulado (boleta no encontrada)';
+    else if(h.companyDiscount) tipo = 'Con descuento de empresa';
+    else if(h.forced && !h.forcedVerified) tipo = 'Forzado — verificando';
+    else if(h.forced) tipo = 'Forzado — verificado';
+
+    const consumo = h.productDetails && h.productDetails.length
+      ? h.productDetails.map(p => p.name + (p.quantity > 1 ? ' x' + p.quantity : '')).join(', ')
+      : (h.products && h.products.length ? h.products.join(', ') : '');
+
+    return {
+      'Fecha': d.toLocaleDateString(),
+      'Hora': d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      'N° de boleta': h.receipt || '',
+      'Tipo': tipo,
+      'Consumo': consumo,
+      'Valor ($)': h.amount != null ? h.amount : '',
+    };
+  });
+
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Historial');
+  const safeName = (cust.name || cust.id).toString().replace(/[^a-zA-Z0-9]+/g, '_');
+  XLSX.writeFile(wb, 'historial_' + safeName + '_' + cust.id + '.xlsx');
 }
 
 // Nombres reales de columna del reporte "ventas_totales" que exporta Toteat.
@@ -1755,6 +1794,7 @@ function render(){
           if(state.expandedHistoryId === c.id){
             html += '<div class="section-label" style="margin:14px 0 6px; display:flex; justify-content:space-between; align-items:center;"><span>Historial completo ('+hist.length+')</span>'
               + '<button class="btn secondary" style="padding:6px 10px; font-size:0.7rem; width:auto; flex:none;" onclick="toggleHistoryView(\''+c.id+'\')">Ocultar</button></div>';
+            html += '<div class="action-row" style="margin:0 0 10px;"><button class="btn secondary" onclick="downloadCustomerHistory(\''+c.id+'\')">⬇️ Descargar historial (Excel)</button></div>';
             if(hist.length === 0){
               html += '<div class="history-empty">Todavía no hay actividad registrada para este cliente.</div>';
             } else {
@@ -1766,13 +1806,15 @@ function render(){
               } else if(h.cancelled){
                 html += '<div class="history-item" style="border-bottom-color:rgba(166,67,43,0.4);"><span style="color:var(--danger);">'+when+' · ❌ No encontramos esa boleta — sello anulado (forzado por '+h.forcedBy+')</span><b style="color:var(--danger);">N° '+h.receipt+'</b></div>';
               } else {
-                html += '<div class="history-item"><span>'+when+(h.products && h.products.length ? ' · '+h.products.join(', ') : '')+(h.amount != null ? ' · $'+h.amount : '')+(h.companyDiscount ? ' · 🏢 con descuento (no sumó sello)' : '')+(h.forced ? ' · ⚠️ Forzado por '+h.forcedBy+(h.forcedVerified ? ' ✅ verificado' : ' (sin verificar en Toteat)') : '')+'</span><b>N° '+h.receipt+'</b></div>';
+                html += '<div class="history-item"><span>'+when+(h.amount != null ? ' · $'+h.amount : '')+(h.companyDiscount ? ' · 🏢 con descuento (no sumó sello)' : '')+(h.forced ? ' · ⚠️ Forzado por '+h.forcedBy+(h.forcedVerified ? ' ✅ verificado' : ' (sin verificar en Toteat)') : '')+'</span><b>N° '+h.receipt+'</b></div>';
                 if(h.productDetails && h.productDetails.length){
                   html += '<div style="padding:2px 0 8px 8px; font-size:0.7rem; color:var(--muted);">';
                   h.productDetails.forEach(p=>{
                     html += '<div>'+p.name+(p.quantity>1?' x'+p.quantity:'')+' — $'+p.amount+(h.mainCoffee && h.mainCoffee.name===p.name ? ' ☕' : '')+'</div>';
                   });
                   html += '</div>';
+                } else if(h.products && h.products.length){
+                  html += '<div style="padding:2px 0 8px 8px; font-size:0.7rem; color:var(--muted);">'+h.products.join(', ')+'</div>';
                 }
                 if(h.forced && !h.forcedVerified){
                   html += '<div class="action-row" style="margin:2px 0 12px 8px; gap:8px;">'

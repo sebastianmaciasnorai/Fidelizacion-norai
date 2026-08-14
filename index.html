@@ -451,7 +451,7 @@ const STAMPS_GOAL = 5;
 // Se muestra abajo de todo en la app para poder confirmar, desde el celular,
 // que Netlify ya terminó de desplegar la versión que acabás de subir
 // (compará lo que ves acá con la fecha/etiqueta que le pusiste al subir el archivo).
-const APP_VERSION = '2026-08-14 · historial sin duplicar + descarga a Excel por cliente';
+const APP_VERSION = '2026-08-14 · Excel con una fila por producto + categoría real de cada uno';
 
 // Mientras seguimos ajustando cómo lee la API los datos reales de Toteat, trabajamos
 // solo con "Forzar sello" + reportes/verificación manual. Poner en true para volver a
@@ -827,8 +827,15 @@ function downloadCustomerHistory(customerId){
   const hist = (cust.history || []).slice().sort((a,b) => a.ts - b.ts);
   if(hist.length === 0){ showToast('Este cliente todavía no tiene historial para descargar.'); return; }
 
-  const rows = hist.map(h => {
+  // Una fila por PRODUCTO (no por boleta): si una boleta tiene café + ensalada + sándwich,
+  // salen 3 filas, repitiendo fecha/hora/N° de boleta en cada una, para poder ordenar y
+  // filtrar por categoría en Excel.
+  const rows = [];
+  hist.forEach(h => {
     const d = new Date(h.ts);
+    const fecha = d.toLocaleDateString();
+    const hora = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
     let tipo = 'Café';
     if(h.redemption) tipo = 'Canje café gratis';
     else if(h.cancelled) tipo = 'Anulado (boleta no encontrada)';
@@ -836,18 +843,32 @@ function downloadCustomerHistory(customerId){
     else if(h.forced && !h.forcedVerified) tipo = 'Forzado — verificando';
     else if(h.forced) tipo = 'Forzado — verificado';
 
-    const consumo = h.productDetails && h.productDetails.length
-      ? h.productDetails.map(p => p.name + (p.quantity > 1 ? ' x' + p.quantity : '')).join(', ')
-      : (h.products && h.products.length ? h.products.join(', ') : '');
+    const base = { 'Fecha': fecha, 'Hora': hora, 'N° de boleta': h.receipt || '', 'Tipo': tipo };
 
-    return {
-      'Fecha': d.toLocaleDateString(),
-      'Hora': d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      'N° de boleta': h.receipt || '',
-      'Tipo': tipo,
-      'Consumo': consumo,
-      'Valor ($)': h.amount != null ? h.amount : '',
-    };
+    if(h.productDetails && h.productDetails.length){
+      h.productDetails.forEach(p => {
+        rows.push(Object.assign({}, base, {
+          'Producto': p.name,
+          'Categoría': p.category || '',
+          'Cantidad': p.quantity || 1,
+          'Valor ($)': p.amount != null ? p.amount : '',
+          'Es el café principal': (h.mainCoffee && h.mainCoffee.name === p.name) ? 'Sí' : '',
+        }));
+      });
+    } else if(h.products && h.products.length){
+      // Boletas viejas, guardadas antes de tener el detalle línea por línea — no tenemos
+      // categoría ni precio individual, solo el nombre.
+      h.products.forEach(pText => {
+        rows.push(Object.assign({}, base, {
+          'Producto': pText, 'Categoría': '', 'Cantidad': '', 'Valor ($)': '', 'Es el café principal': '',
+        }));
+      });
+    } else {
+      // Canjes, anulaciones o sellos forzados que todavía no tienen detalle de productos.
+      rows.push(Object.assign({}, base, {
+        'Producto': tipo, 'Categoría': '', 'Cantidad': '', 'Valor ($)': h.amount != null ? h.amount : '', 'Es el café principal': '',
+      }));
+    }
   });
 
   const ws = XLSX.utils.json_to_sheet(rows);
@@ -978,8 +999,9 @@ async function parseSalesReportFile(file){
         const name = r[REPORT_COLUMNS.productName].trim();
         const quantity = Number(r[REPORT_COLUMNS.quantity]) || 1;
         const amount = Number(r[REPORT_COLUMNS.amount]) || 0;
+        const category = (r[REPORT_COLUMNS.hierarchyName] || '').trim() || (r[REPORT_COLUMNS.hierarchyCode] || '').trim() || null;
         const isCoffee = reportRowIsCoffee(r[REPORT_COLUMNS.hierarchyCode], r[REPORT_COLUMNS.hierarchyName], name);
-        return { name, quantity, amount, isCoffee };
+        return { name, quantity, amount, category, isCoffee };
       });
 
     const amountSum = products.reduce((sum, p) => sum + p.amount, 0);
@@ -996,7 +1018,7 @@ async function parseSalesReportFile(file){
       amount,
       dateClosed,
       productsText: products.map(p => p.name + (p.quantity > 1 ? ' x' + p.quantity : '')),
-      productDetails: products.map(p => ({ name: p.name, quantity: p.quantity, amount: p.amount, category: p.isCoffee ? 'AB.120' : null })),
+      productDetails: products.map(p => ({ name: p.name, quantity: p.quantity, amount: p.amount, category: p.category })),
       mainCoffee: mainCoffee ? { name: mainCoffee.name, amount: mainCoffee.amount } : null,
     };
   });

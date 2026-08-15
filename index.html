@@ -451,7 +451,7 @@ const STAMPS_GOAL = 5;
 // Se muestra abajo de todo en la app para poder confirmar, desde el celular,
 // que Netlify ya terminó de desplegar la versión que acabás de subir
 // (compará lo que ves acá con la fecha/etiqueta que le pusiste al subir el archivo).
-const APP_VERSION = '2026-08-14 · Excel con una fila por producto + categoría real de cada uno';
+const APP_VERSION = '2026-08-14 · Excel: N° de boleta, Fecha, Hora, Categoría, Producto, Cantidad, Valor, Tipo';
 
 // Mientras seguimos ajustando cómo lee la API los datos reales de Toteat, trabajamos
 // solo con "Forzar sello" + reportes/verificación manual. Poner en true para volver a
@@ -828,8 +828,9 @@ function downloadCustomerHistory(customerId){
   if(hist.length === 0){ showToast('Este cliente todavía no tiene historial para descargar.'); return; }
 
   // Una fila por PRODUCTO (no por boleta): si una boleta tiene café + ensalada + sándwich,
-  // salen 3 filas, repitiendo fecha/hora/N° de boleta en cada una, para poder ordenar y
-  // filtrar por categoría en Excel.
+  // salen 3 filas, repitiendo fecha/hora en cada una, para poder ordenar y filtrar por
+  // categoría en Excel. Orden de columnas: Fecha, Hora, Categoría, Producto, Cantidad,
+  // Valor, Tipo de canje.
   const rows = [];
   hist.forEach(h => {
     const d = new Date(h.ts);
@@ -843,16 +844,16 @@ function downloadCustomerHistory(customerId){
     else if(h.forced && !h.forcedVerified) tipo = 'Forzado — verificando';
     else if(h.forced) tipo = 'Forzado — verificado';
 
-    const base = { 'Fecha': fecha, 'Hora': hora, 'N° de boleta': h.receipt || '', 'Tipo': tipo };
+    const base = { 'N° de boleta': h.receipt || '', 'Fecha': fecha, 'Hora': hora };
 
     if(h.productDetails && h.productDetails.length){
       h.productDetails.forEach(p => {
         rows.push(Object.assign({}, base, {
-          'Producto': p.name,
           'Categoría': p.category || '',
+          'Producto': p.name,
           'Cantidad': p.quantity || 1,
           'Valor ($)': p.amount != null ? p.amount : '',
-          'Es el café principal': (h.mainCoffee && h.mainCoffee.name === p.name) ? 'Sí' : '',
+          'Tipo de canje': tipo,
         }));
       });
     } else if(h.products && h.products.length){
@@ -860,13 +861,13 @@ function downloadCustomerHistory(customerId){
       // categoría ni precio individual, solo el nombre.
       h.products.forEach(pText => {
         rows.push(Object.assign({}, base, {
-          'Producto': pText, 'Categoría': '', 'Cantidad': '', 'Valor ($)': '', 'Es el café principal': '',
+          'Categoría': '', 'Producto': pText, 'Cantidad': '', 'Valor ($)': '', 'Tipo de canje': tipo,
         }));
       });
     } else {
       // Canjes, anulaciones o sellos forzados que todavía no tienen detalle de productos.
       rows.push(Object.assign({}, base, {
-        'Producto': tipo, 'Categoría': '', 'Cantidad': '', 'Valor ($)': h.amount != null ? h.amount : '', 'Es el café principal': '',
+        'Categoría': '', 'Producto': tipo, 'Cantidad': '', 'Valor ($)': h.amount != null ? h.amount : '', 'Tipo de canje': tipo,
       }));
     }
   });

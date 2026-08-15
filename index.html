@@ -451,7 +451,7 @@ const STAMPS_GOAL = 5;
 // Se muestra abajo de todo en la app para poder confirmar, desde el celular,
 // que Netlify ya terminó de desplegar la versión que acabás de subir
 // (compará lo que ves acá con la fecha/etiqueta que le pusiste al subir el archivo).
-const APP_VERSION = '2026-08-14 · Excel: N° de boleta, Fecha, Hora, Categoría, Producto, Cantidad, Valor, Tipo';
+const APP_VERSION = '2026-08-14 · "Le gusta" a 4 (3 + complemento) + búsqueda fallida pasa a forzar automático';
 
 // Mientras seguimos ajustando cómo lee la API los datos reales de Toteat, trabajamos
 // solo con "Forzar sello" + reportes/verificación manual. Poner en true para volver a
@@ -1118,7 +1118,16 @@ async function submitReceipt(customerId){
     state.lookingUpReceipt = false;
 
     if(!data.ok){
-      state.receiptWarning = data.error || 'No se pudo validar esa boleta.';
+      // No la encontró al toque (puede ser que Toteat todavía no sincronizó esa venta,
+      // o esté caída). En vez de perder el intento, dejamos todo listo para forzarla:
+      // el N° de boleta ya queda cargado, solo falta que el staff ponga el responsable.
+      // Una vez guardada, el reintento automático la va a volver a chequear sola la
+      // próxima vez que se abra el panel.
+      state.receiptWarning = (data.error || 'No se pudo validar esa boleta.') + ' Completá el responsable abajo para guardarla como "Verificando" — se va a reintentar sola más adelante.';
+      state.forcingCustomerId = customerId;
+      state.forceReceiptValue = receipt;
+      state.forceResponsable = '';
+      state.forceWarning = '';
       render();
       return;
     }
@@ -1130,7 +1139,11 @@ async function submitReceipt(customerId){
   }catch(e){
     console.error(e);
     state.lookingUpReceipt = false;
-    state.receiptWarning = 'No se pudo conectar con la validación de boletas. Probá de nuevo.';
+    state.receiptWarning = 'No se pudo conectar con Toteat. Completá el responsable abajo para guardarla como "Verificando" — se va a reintentar sola más adelante.';
+    state.forcingCustomerId = customerId;
+    state.forceReceiptValue = receipt;
+    state.forceResponsable = '';
+    state.forceWarning = '';
     render();
     return;
   }
@@ -1205,7 +1218,18 @@ async function addStamp(customerId){
     cust.history.unshift(historyEntry);
   }
   cust.history = cust.history.slice(0, 500);
-  products.forEach(p=>{ cust.tasteProfile[p] = (cust.tasteProfile[p]||0) + 1; });
+  // Contamos "gustos" a partir de los productos reales (con categoría), no del texto
+  // libre — así no se cuela "Sello manual (prueba)" ni mensajes de error como si fueran
+  // productos que el cliente pidió.
+  if(state.lastProductDetails && state.lastProductDetails.length){
+    state.lastProductDetails.forEach(p => {
+      if(!p || !p.name) return;
+      const prev = cust.tasteProfile[p.name];
+      const prevCount = (prev && typeof prev === 'object') ? (prev.count || 0) : (Number(prev) || 0);
+      const prevCategory = (prev && typeof prev === 'object') ? prev.category : '';
+      cust.tasteProfile[p.name] = { count: prevCount + 1, category: p.category || prevCategory || '' };
+    });
+  }
 
   await saveCustomer(cust);
   await loadAllCustomers();
@@ -1249,8 +1273,38 @@ async function redeemFree(customerId){
 }
 
 function topTastes(cust, n){
+  n = n || 4;
   const profile = cust.tasteProfile || {};
-  return Object.entries(profile).sort((a,b)=>b[1]-a[1]).slice(0, n||3).map(e=>e[0]);
+  const entries = Object.entries(profile).map(([name, info]) => {
+    const count = (info && typeof info === 'object') ? (info.count || 0) : (Number(info) || 0);
+    const category = (info && typeof info === 'object') ? (info.category || '') : '';
+    return { name, count, category };
+  }).filter(e => e.count > 0).sort((a,b) => b.count - a.count);
+
+  if(entries.length === 0) return [];
+
+  // Los primeros (n-1) van por pura frecuencia. El último lugar se reserva para el
+  // producto más repetido que sea de una categoría DISTINTA a todos los anteriores —
+  // así, aunque los primeros sean puro café, siempre asoma el complemento real
+  // (ensalada, sándwich, etc.) si el cliente tiene alguno en su historial.
+  const coreCount = Math.max(0, n - 1);
+  const core = entries.slice(0, coreCount);
+  const coreNames = new Set(core.map(e => e.name));
+  const coreCategories = new Set(core.map(e => (e.category || '').toLowerCase()).filter(Boolean));
+
+  const result = core.map(e => e.name);
+
+  if(result.length < n){
+    const different = entries.find(e => !coreNames.has(e.name) && e.category && !coreCategories.has(e.category.toLowerCase()));
+    if(different){
+      result.push(different.name);
+    } else {
+      const next = entries.find(e => !coreNames.has(e.name));
+      if(next) result.push(next.name);
+    }
+  }
+
+  return result.slice(0, n);
 }
 
 // Busca si un N° de boleta ya fue ingresado antes, en la tarjeta de CUALQUIER cliente
@@ -1758,7 +1812,7 @@ function render(){
             html += '<div><b style="color:var(--ink);">Empresa:</b> solicitud pendiente ('+c.companyCode+')</div>';
           }
           html += '<div><b style="color:var(--ink);">Café(s) gratis canjeados:</b> '+(c.redeemed||0)+'</div>';
-          const allTastes = topTastes(c, 6);
+          const allTastes = topTastes(c, 4);
           if(allTastes.length) html += '<div><b style="color:var(--ink);">Le gusta:</b> '+allTastes.join(', ')+'</div>';
           if(c.internalNote) html += '<div style="margin-top:6px; padding-top:6px; border-top:1px dashed var(--line);"><b style="color:var(--ink);">Nota interna:</b> '+c.internalNote+'</div>';
           html += '</div>';

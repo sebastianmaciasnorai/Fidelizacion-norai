@@ -144,17 +144,20 @@ exports.handler = async (event) => {
   }
 
   function isCoffeeByHierarchy(p) {
-    return getHierarchyText(p).toUpperCase().includes(HIERARCHY_CODE);
+    const text = getHierarchyText(p).toUpperCase();
+    return text.includes(HIERARCHY_CODE) || text.includes('CAFÉ') || text.includes('CAFE');
   }
 
-  // Respaldo por nombre, solo para productos que no traigan el campo de jerarquía
-  // (o mientras confirmamos el nombre exacto del campo con una boleta real).
-  const COFFEE_KEYWORDS = ['cafe', 'café', 'latte', 'capuccino', 'cappuccino', 'espresso', 'expreso', 'americano', 'macchiato', 'mocha', 'moka', 'flat white', 'cortado', 'cold brew'];
+  // Respaldo por nombre del producto — SIEMPRE se prueba, además de la jerarquía (no solo
+  // cuando el campo de jerarquía viene vacío), porque a veces Toteat manda ese campo con
+  // un formato que no calza ("Café" en vez de "AB.120", u otra variante) y no queremos
+  // perder la detección solo por eso.
+  const COFFEE_KEYWORDS = ['cafe', 'café', 'latte', 'capuccino', 'cappuccino', 'espresso', 'espreso', 'expreso', 'americano', 'macchiato', 'macchiatto', 'mocha', 'moka', 'flat white', 'cortado', 'cold brew'];
   function isCoffeeByName(p) {
     return COFFEE_KEYWORDS.some(k => (p.name || '').toLowerCase().includes(k));
   }
 
-  const coffeeItems = rawProducts.filter(p => isCoffeeByHierarchy(p) || (!getHierarchyText(p) && isCoffeeByName(p)));
+  const coffeeItems = rawProducts.filter(p => isCoffeeByHierarchy(p) || isCoffeeByName(p));
 
   // Si hay varios cafés en la misma boleta, nos quedamos con el de mayor valor
   // como "el café" representativo de esta visita.

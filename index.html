@@ -451,7 +451,7 @@ const STAMPS_GOAL = 5;
 // Se muestra abajo de todo en la app para poder confirmar, desde el celular,
 // que Netlify ya terminó de desplegar la versión que acabás de subir
 // (compará lo que ves acá con la fecha/etiqueta que le pusiste al subir el archivo).
-const APP_VERSION = '2026-08-14 · "Le gusta" a 4 (3 + complemento) + búsqueda fallida pasa a forzar automático';
+const APP_VERSION = '2026-08-15 · solo un botón de boleta + detección de café más robusta';
 
 // Mientras seguimos ajustando cómo lee la API los datos reales de Toteat, trabajamos
 // solo con "Forzar sello" + reportes/verificación manual. Poner en true para volver a
@@ -1850,7 +1850,7 @@ function render(){
 
             if(state.forcingCustomerId === c.id){
               html += '<div class="customer-expand" style="margin-top:10px; padding-top:10px; border-top:1px dashed var(--line);">';
-              html += '<p class="note" style="margin-top:0;">Usá esto solo si la búsqueda automática en Toteat no está funcionando. Igual se intenta corroborar la boleta; si Toteat no responde, el sello queda marcado como "sin verificar" para revisar después.</p>';
+              html += '<p class="note" style="margin-top:0;">No la encontramos automáticamente. Igual se intenta corroborar la boleta; si Toteat no responde, el sello queda marcado como "sin verificar" para revisar después.</p>';
               html += '<div class="field" style="margin-bottom:8px;"><label>Responsable</label>'
                 + '<input id="force-responsable" placeholder="Nombre de quien está forzando el sello" value="'+(state.forceResponsable||'').replace(/"/g,'&quot;')+'" oninput="state.forceResponsable=this.value; state.forceWarning=\'\';"></div>';
               html += '<div class="field" style="margin-bottom:8px;"><label>N° de boleta</label>'
@@ -1861,7 +1861,9 @@ function render(){
               html += '<div class="action-row"><button class="btn secondary" onclick="toggleForceForm(\''+c.id+'\')">Cancelar</button>'
                 + '<button class="btn danger" onclick="confirmForceStamp(\''+c.id+'\')">'+(state.forceLookingUp ? 'Verificando...' : 'Confirmar sello forzado')+'</button></div>';
               html += '</div>';
-            } else {
+            } else if(!LIVE_RECEIPT_SEARCH_ENABLED){
+              // Sin la búsqueda automática activa no hay otra forma de sumar sellos, así
+              // que dejamos el botón manual visible como único camino.
               html += '<div class="action-row"><button class="btn" style="background:transparent; border:1.5px dashed var(--muted); color:var(--muted);" onclick="toggleForceForm(\''+c.id+'\')">⚠️ Forzar sello (manual)</button></div>';
             }
           }
